@@ -36,9 +36,9 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from socketserver import ThreadingMixIn
 from typing import Any, Dict, List, Tuple
 
 import mlx.core as mx
@@ -284,9 +284,18 @@ def score_pairs(bundle: Dict[str, Any], pairs: List[Tuple[str, str]]) -> List[fl
 
 BUNDLE: Dict[str, Any] = None  # type: ignore
 
+# Global mutex around the MLX forward pass. MLX is NOT thread-safe for
+# concurrent calls into the same model (ml-explore/mlx#3078), and under
+# load from a bench the stock ThreadingHTTPServer triggered a Metal
+# GPU Address Fault (kIOGPUCommandBufferCallbackErrorPageFault, SIGABRT)
+# after ~38 requests. We now use the single-threaded HTTPServer and
+# belt-and-braces this lock so future concurrent callers still serialize
+# on the model. The bench's Rust client issues rerank calls sequentially
+# per question, so this costs nothing in practice.
+_SCORE_LOCK = threading.Lock()
 
-class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-    daemon_threads = True
+
+class SingleThreadedHTTPServer(HTTPServer):
     allow_reuse_address = True
 
 
@@ -320,7 +329,8 @@ class Handler(BaseHTTPRequestHandler):
 
             pairs = [(query, str(d)) for d in docs]
             t0 = time.perf_counter()
-            scores = score_pairs(BUNDLE, pairs)
+            with _SCORE_LOCK:
+                scores = score_pairs(BUNDLE, pairs)
             elapsed_ms = int((time.perf_counter() - t0) * 1000)
             indexed = sorted(
                 ((i, float(s)) for i, s in enumerate(scores)),
@@ -372,7 +382,7 @@ def main() -> int:
     sys.stdout.write(f"listening on http://{HOST}:{PORT}\n")
     sys.stdout.flush()
 
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server = SingleThreadedHTTPServer((HOST, PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
