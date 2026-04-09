@@ -1,13 +1,16 @@
-//! Gemini Embed 2 client (gemini-embedding-001 / -002).
+//! Gemini Embed 2 client (gemini-embedding-2-preview, formerly -001).
 //!
 //! Uses Google's `:embedContent` REST endpoint with the v1beta API.
 //! Reads `GEMINI_API_KEY` or accepts an explicit key.
+//!
+//! Model override: set `GEMINI_EMBED_MODEL` to force a specific model name
+//! (e.g. "gemini-embedding-001" to pin to the legacy stable version).
 
 use crate::{Embedder, EmbedError, TaskMode};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-const DEFAULT_MODEL: &str = "gemini-embedding-001";
+const DEFAULT_MODEL: &str = "gemini-embedding-2-preview";
 const DEFAULT_DIMS: usize = 768;
 const ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -37,7 +40,11 @@ impl GeminiEmbedder {
     pub fn from_env() -> Result<Self, EmbedError> {
         let key = std::env::var("GEMINI_API_KEY")
             .map_err(|_| EmbedError::MissingKey { provider: "gemini" })?;
-        Ok(Self::new(key))
+        let mut e = Self::new(key);
+        if let Ok(model) = std::env::var("GEMINI_EMBED_MODEL") {
+            e = e.with_model(model);
+        }
+        Ok(e)
     }
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
