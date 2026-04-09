@@ -73,32 +73,24 @@ pub struct QaTypeStats {
 }
 
 const ANSWERER_SYSTEM: &str =
-    "You are a precise assistant that answers questions using the provided conversation context.\n\n\
-     METHOD — follow this process exactly:\n\
-     1. Identify the key entities, names, dates, places, or numbers the question is asking about.\n\
-     2. Scan the context for those entities. Quote the exact span(s) of text that contain the answer.\n\
-     3. Only AFTER finding evidence, write the final answer in a single short sentence.\n\n\
-     CRITICAL RULES:\n\
-     - NEVER say 'I don't know' or 'not in the context' if a proper noun, number, or date from \
-       the question appears anywhere in the context. Find it and extract it.\n\
-     - If the question asks 'where' and a place name appears in the context, answer with that place.\n\
-     - If the question asks 'how long' or 'how many', give the exact number and unit from the context.\n\
-     - If the context says '45 minutes each way', that is a complete answer — do not convert units \
-       or editorialize. Quote the user's own phrasing.\n\
-     - For 'when' questions: each session is prefixed with a header like \
-       '[session_5 — 1:36 pm on 3 July, 2023]'. When the conversation uses relative references \
-       ('yesterday', 'last week', 'two days ago', 'next month'), RESOLVE them to absolute dates \
-       using that header. 'yesterday' said in a session dated '8 May, 2023' = '7 May 2023'. \
-       'last year' said in a 2023 session = '2022'. Always answer 'when' with the absolute date, \
-       never the relative phrase.\n\
-     - For list questions ('what books', 'what activities', 'what events'): scan ALL retrieved \
-       sessions and extract the exact nouns the user named. Do not paraphrase ('exploring' is \
-       not an answer when the user named 'dinosaurs'). Comma-separate the items.\n\
-     - Only after an exhaustive scan, if the answer is genuinely absent, say 'I don't know' — but \
-       this should be rare. Most failures are from not scanning carefully enough, not from missing data.\n\n\
-     OUTPUT FORMAT — always use this exact structure:\n\
-     EVIDENCE: <direct quote from context, including which session it came from>\n\
-     ANSWER: <one short sentence>";
+    "You are a precise scientific assistant. Answer questions using ONLY the provided context.\n\n\
+     METHOD:\n\
+     1. Identify the key entities, names, dates, places, or numbers the question asks about.\n\
+     2. Scan ALL retrieved sessions for those entities. Quote the exact text spans.\n\
+     3. Collect ALL relevant facts before writing the answer. For list questions, ensure you \
+        have found EVERY item across ALL sessions, not just the first match.\n\n\
+     PRECISION RULES:\n\
+     - Use the EXACT terms from the context. Do not paraphrase, generalise, or summarise.\n\
+     - For numbers and dates: give the precise value from the context.\n\
+     - For 'when' questions: resolve relative dates ('yesterday', 'last week') to absolute dates \
+       using the session header timestamps.\n\
+     - For list questions ('what books', 'what activities'): extract EVERY item mentioned across \
+       ALL sessions. Missing items is a failure. Comma-separate the complete list.\n\
+     - If the answer is genuinely not in the context, say 'I don't know'. Do NOT guess or \
+       fabricate. An honest 'I don't know' is better than a wrong or incomplete answer.\n\n\
+     OUTPUT FORMAT:\n\
+     EVIDENCE: <direct quote(s) from context, citing which session each came from>\n\
+     ANSWER: <precise, complete answer using exact terms from context>";
 
 fn build_answerer_user(question: &str, context: &str) -> String {
     format!(
@@ -780,12 +772,39 @@ where
                 total_correct += 1;
             }
 
-            // LoCoMo doesn't carry "answer session ids" the way LongMemEval does,
-            // so we can only report retrieval distributions, not R@k against gold.
-            // Leave recall_at_5 / mrr as 0 for LoCoMo — the right signal lives in
-            // accuracy + by_category.
-            let r5 = 0f32;
-            let rr = 0f32;
+            // LoCoMo carries gold evidence as `D{N}:{turn}` references.
+            // Map these to session IDs (D1 → session_1) and compute R@5
+            // against the retrieved_sessions list.
+            let gold_sessions: std::collections::HashSet<String> = qa
+                .evidence
+                .iter()
+                .filter_map(|e| {
+                    // "D1:3" → "session_1"
+                    e.split(':')
+                        .next()
+                        .and_then(|d| d.strip_prefix('D'))
+                        .and_then(|n| n.parse::<u32>().ok())
+                        .map(|n| format!("session_{n}"))
+                })
+                .collect();
+            let r5 = if gold_sessions.is_empty() {
+                0f32
+            } else {
+                let found = retrieved_sessions
+                    .iter()
+                    .any(|s| gold_sessions.contains(s));
+                if found { 1.0 } else { 0.0 }
+            };
+            let rr = if gold_sessions.is_empty() {
+                0f32
+            } else {
+                retrieved_sessions
+                    .iter()
+                    .enumerate()
+                    .find(|(_, s)| gold_sessions.contains(s.as_str()))
+                    .map(|(rank, _)| 1.0 / (rank as f32 + 1.0))
+                    .unwrap_or(0.0)
+            };
             total_recall5 += r5;
             total_mrr += rr;
 

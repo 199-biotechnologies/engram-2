@@ -18,27 +18,28 @@ pub struct JudgeVerdict {
 }
 
 const JUDGE_SYSTEM: &str =
-    "You are an expert evaluator. You will be given a question, a reference answer, and a candidate answer. \
-     Decide whether the candidate answer is factually correct and addresses the question, using the \
-     reference answer as ground truth.\n\n\
-     EQUIVALENCE RULES — the candidate is CORRECT if any of these hold:\n\
-     1. Same fact, different wording. 'Business Administration degree' ≡ 'BA in Business Administration'.\n\
-     2. Numeric consistency. '45 minutes each way' ≡ '90 minutes round trip' ≡ '90 minutes total' \
-        (45 × 2 = 90; one-way and total describe the same commute).\n\
-     3. Unit conversions. '1.5 hours' ≡ '90 minutes' ≡ '1 hour 30 minutes'. '2 weeks' ≡ '14 days'.\n\
-     4. Partial match that covers the key fact. Gold='Target' and candidate='Target store' or \
-        'at Target' is CORRECT. Gold='John Smith' and candidate='John' is CORRECT unless ambiguity matters.\n\
-     5. Superset answers. If the gold is a single item from a list and the candidate names that item \
-        (possibly alongside others that are also true), it is CORRECT.\n\
-     6. Format differences. Date '2024-03-15' ≡ 'March 15, 2024' ≡ '15 March 2024'.\n\n\
-     The candidate is INCORRECT if:\n\
-     - It contradicts the reference on a key fact (wrong name, wrong number, wrong entity).\n\
-     - It hallucinates facts not in the reference.\n\
-     - It refuses to answer ('I don't know', 'not in the context', etc.) when the reference contains \
-       a specific, answerable fact. Refusal is always INCORRECT when the question has a definite answer.\n\
-     - It fails to address the question at all.\n\n\
-     Think briefly about whether the candidate satisfies any of the equivalence rules above. \
-     Then respond with exactly one word on the final line: CORRECT or INCORRECT.";
+    "You are a strict scientific evaluator. Precision matters — partial, vague, or \
+     summarised answers are NOT acceptable.\n\n\
+     You will be given a question, a reference answer, and a candidate answer. Decide \
+     whether the candidate is CORRECT using the reference as ground truth.\n\n\
+     CORRECT if:\n\
+     1. The candidate states the same fact(s) as the reference, possibly worded differently. \
+        'Business Administration degree' ≡ 'BA in Business Administration'.\n\
+     2. Numeric equivalence. '1.5 hours' ≡ '90 minutes'. '45 minutes each way' ≡ '90 minutes total'.\n\
+     3. Date format differences. '2024-03-15' ≡ 'March 15, 2024'.\n\n\
+     INCORRECT if:\n\
+     - LIST QUESTIONS: the reference lists N items and the candidate names fewer than N. \
+       Missing ANY gold item makes the answer INCORRECT, even if the items it does name are right. \
+       Example: gold='beach, mountains, forest', candidate='beach' → INCORRECT (2 missing).\n\
+     - The candidate gives a vague paraphrase instead of the specific fact. \
+       Example: gold='mentors, family, friends', candidate='people who support her' → INCORRECT.\n\
+     - The candidate hedges or equivocates. 'once or twice' when the gold is '2' → INCORRECT.\n\
+     - The candidate adds fabricated details not in the reference.\n\
+     - The candidate contradicts the reference on any key fact.\n\
+     - The candidate refuses ('I don't know') when the reference has a definite answer.\n\
+     - The candidate gives incorrect specifics (wrong name, wrong number, wrong date).\n\n\
+     When in doubt, mark INCORRECT. Scientific memory must be precise.\n\
+     Respond with exactly one word on the final line: CORRECT or INCORRECT.";
 
 fn build_judge_user(question: &str, gold: &str, candidate: &str) -> String {
     format!(
