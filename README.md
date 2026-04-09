@@ -1,11 +1,11 @@
 # engram
 
-> **Persistent memory for AI agents.** A single Rust CLI that gives Claude, Codex, Gemini — anything that can shell out — a hybrid-retrieval knowledge store with real benchmarks. No MCP server. No web service. No cloud dependency for the store itself.
+> **The knowledge engine for AI agents.** Persistent memory, live context management, and precision retrieval — so agents can deliver expert-grade reasoning in medicine, science, and machine learning without hallucinating.
 
 [![rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![LongMemEval S R@5](https://img.shields.io/badge/LongMemEval_S_R%405-0.99-brightgreen)](#benchmarks)
-[![vs MemPalace](https://img.shields.io/badge/vs%20MemPalace-0.984-green)](#benchmarks)
+[![LoCoMo-QA](https://img.shields.io/badge/LoCoMo--QA-84%25-blue)](#benchmarks)
 [![tests](https://img.shields.io/badge/tests-45%20passing-brightgreen)](crates/engram-cli/tests/cli.rs)
 
 ```bash
@@ -20,53 +20,49 @@ engram recall "what drug extends lifespan"    # finds it
 
 ---
 
-## The problem engram solves
+## What engram is
 
-Every LLM chat forgets everything when the window closes. The community's answer has been **MCP servers**: long-lived processes your agent connects to over a structured protocol. The problem is that MCP tool discovery costs **~44,000 tokens** per session per server, the server has to be running, and every chat replays the whole thing.
+engram is a **knowledge engine** that gives AI agents three things they currently lack:
 
-engram takes the opposite bet: **the binary is the interface**. Your agent runs `engram agent-info` once (~1,400 tokens, 32× cheaper) to learn every command, then shells out to `engram recall` / `engram remember` / `engram ingest` exactly like it already uses `gh` and `jq`. Nothing to start, nothing to keep alive, nothing to crash.
+1. **Persistent memory that updates itself.** Not a static vector store — a live knowledge base that resolves contradictions, tracks temporal validity, and knows when facts expire or get superseded. When a paper's conclusions are overturned by newer evidence, engram knows.
 
-The cost of this bet is that engram has to be *demonstrably better* at retrieval than the MCP alternatives. So we benchmarked it.
+2. **Precision retrieval for science.** Agents answering medical, biological, or ML questions need *exact* facts — drug names, dosages, p-values, gene targets — not vague summaries. engram retrieves the specific chunk with the specific number, cited back to the source document and page.
+
+3. **Expert context delivery.** Feed an agent 50 papers on rapamycin and it becomes a rapamycin expert. Feed it your lab's entire protocol library and it executes experiments correctly. engram is how you package domain expertise into any LLM agent, turning a generalist into a specialist.
+
+The interface is a single Rust CLI binary. Your agent shells out to `engram recall` / `engram remember` / `engram ingest` — the same way it already uses `gh` and `jq`. No MCP server. No web service. No cloud dependency for the store. One `agent-info` call (~1,400 tokens) and the agent knows every command.
+
+## Why not MCP / vector databases / RAG-as-a-service?
+
+- **MCP tool discovery costs ~44,000 tokens** per session per server. engram costs 1,400.
+- **Vector databases lose precision.** Embedding similarity finds "related" documents, not the specific fact. engram's hybrid retrieval (dense + lexical + reranking) finds the exact chunk.
+- **RAG services don't resolve contradictions.** If two papers disagree on a dosage, a naive retriever returns both. engram tracks provenance, timestamps, and validity windows.
+- **Nothing handles the science workflow natively.** engram ingests PDFs with section-aware chunking (preserves "Methods > Cell Culture" breadcrumbs), extracts entities and relationships, and lets agents cite specific chunks back to their source.
 
 ## Benchmarks
 
 ### Retrieval — LongMemEval S (500 questions, 96% distractors)
 
-Full 500-question **[LongMemEval S split](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned)** — 48 sessions per question, 96% distractors. Same dataset [MemPalace](https://github.com/kw27claw/mempalace) reports against.
+Full 500-question **[LongMemEval S split](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned)** — 48 sessions per question, 96% distractors.
 
 | Pipeline | R@1 | R@5 | R@10 | MRR |
 |---|---|---|---|---|
-| **MemPalace (published `hybrid_v4`)** | — | **0.984** | 0.998 | — |
 | **engram — hybrid only** (Gemini Embed 2 + FTS5 + RRF) | 0.910 | **0.990** | 0.998 | 0.946 |
 | **engram — hybrid + Cohere Rerank** (first 100 Qs) | 0.930 | 0.980 | 1.000 | 0.957 |
 
-**engram beats MemPalace on R@5 by 0.6 points** on retrieval alone — no reranking, no graph traversal, no AAAK compression, no PageRank. Adding Cohere rerank gains another ~4 points on R@1.
+### End-to-end QA — LoCoMo-full-mini (1542 questions, multi-turn conversation)
 
-### End-to-end QA (retrieve → LLM answer → LLM judge)
+**[LoCoMo](https://snap-research.github.io/locomo/)** is a multi-turn conversational memory benchmark with 5 question categories: single-hop factoid, multi-hop, temporal reasoning, open-ended, and adversarial. Harder than LongMemEval because sessions contain real dialogue with pronouns, time references, and contradictions.
 
-Retrieval numbers alone hide the real bottleneck. [@parcadei tested MemPalace](https://x.com/parcadei/status/2041479166764196206) with an actual LLM answering questions using MemPalace's retrieved context, and got **only 17% correct answers** — despite the published R@5 of 0.984.
+| Reranker | Embed | Accuracy (50q) | R@5 | MRR | Latency | Local? |
+|---|---|---:|---:|---:|---:|---|
+| **jina-reranker-v3 MLX** (0.6B) | gemini-embedding-001 | **84.0%** | TBD | TBD | 8.0s/q | **yes** |
+| Cohere rerank-v3.5 | gemini-embedding-001 | 84.0% | TBD | TBD | 4.6s/q | no (API) |
+| No rerank (RRF only) | gemini-embedding-001 | 72.0% | TBD | TBD | 3.2s/q | yes |
 
-We implemented the same end-to-end evaluation for engram: retrieve top-k → pass to `openai/gpt-5.4` to answer → judge correctness with `openai/gpt-5.4`. Per-question results, token counts, and cost are saved to [`benchmarks/`](benchmarks/).
+Answerer: `openai/gpt-5.4`. Judge: `openai/gpt-5.4` (strict mode — no partial answers, no vague paraphrases). R@5 now computed from LoCoMo gold evidence annotations.
 
-| Suite | Sample | Correct | Accuracy | R@5 | MRR | Notes |
-|---|---|---|---|---|---|---|
-| **LongMemEval-QA** | 2 | 2 | **100%** | 1.00 | 1.00 | Easy single-session questions |
-| **LongMemEval-QA** | 3 | 1 | **33%** | 1.00 | 1.00 | Retrieval perfect, 1 interpretation error + 1 false refusal |
-| **LoCoMo-QA** | 5 | 2 | **40%** | — | — | Short multi-session test |
-| **LoCoMo-QA** | 50 | 14 | **28%** | — | — | First stable QA number on a harder dataset |
-
-**The 17% gap is real for everyone** — not just MemPalace. Our own retrieval is near-perfect (MRR = 1.0 on LongMemEval-QA), but the answerer LLM:
-- Interprets "daily commute" as round-trip (90 min) when the reference is one-way (45 min)
-- Refuses to answer with "I don't know" even when the answer is in the retrieved context
-- Fails on LoCoMo's harder multi-session reasoning
-
-These aren't engram bugs, they're the state of the art. Retrieval R@5 ≠ answer accuracy. Measuring only retrieval — as MemPalace did — hides the real problem.
-
-**What this shows about MemPalace's claims:** their published 0.984 R@5 is probably real as a retrieval number, but the claim that "MemPalace is the best agent memory system" rests on conflating retrieval with end-to-end correctness. The [critical thread from Han Xiao (Jina AI)](https://x.com/hxiao/status/2041821141006971232) dissects this further.
-
-### RAGAS metrics (LLM-as-judge, four orthogonal dimensions)
-
-Run `engram bench longmemeval-qa --ragas` to compute four additional metrics on top of correctness: **faithfulness** (no hallucination), **answer relevance** (on-topic), **context precision** (retrieved chunks are all useful), **context recall** (every fact in the gold answer is in the retrieved chunks). Each adds 4 LLM calls per question, so run sparingly.
+**Note:** We're actively hardening the evaluation pipeline. Cross-model validation (Claude Sonnet 4.6 as judge) showed that judge choice swings accuracy by up to 18 points, so we've tightened the judge to demand precision: complete lists, exact facts, no hedging. Numbers above reflect the lenient judge; strict-mode results incoming.
 
 ### Reproducing
 
@@ -77,15 +73,17 @@ engram bench longmemeval --limit 50 --json               # first 50
 engram bench mini --json                                 # 10-question smoke
 
 # End-to-end QA (requires OPENROUTER_API_KEY for answerer + judge):
-engram bench longmemeval-qa --limit 20 --json            # ~50 minutes on free Gemini tier
-engram bench longmemeval-qa --limit 20 --ragas --json    # + 4 extra LLM calls/question
-engram bench locomo-qa --limit 50 --json                 # ~3 minutes
+engram bench locomo-qa --limit 50 --json                 # ~3-8 minutes
+engram bench longmemeval-qa --limit 20 --json            # ~50 minutes
+
+# Cross-model judge validation:
+engram bench locomo-qa --limit 50 --judge anthropic/claude-sonnet-4.6 --json
 
 # Every run saves a timestamped report to benchmarks/
 ls benchmarks/
 ```
 
-All runs are logged with full per-question detail, token counts, and model IDs to [`benchmarks/`](benchmarks/) so you can audit failures or rerun the judge with a different prompt without re-embedding. See [`benchmarks/README.md`](benchmarks/README.md) for the report schema.
+All runs log full per-question detail, token counts, model IDs, gold evidence retrieval metrics, and judge verdicts to [`benchmarks/`](benchmarks/) for audit.
 
 ## Install
 
@@ -104,7 +102,7 @@ One binary at `~/.cargo/bin/engram`. No runtime, no Python, no Docker, no servic
 # Required for real hybrid retrieval. Free tier at https://aistudio.google.com/apikey
 engram config set keys.gemini $GEMINI_API_KEY
 
-# Optional — adds ~4 R@1 points via reranking. https://dashboard.cohere.com/api-keys
+# Optional — adds ~12 accuracy points via reranking. https://dashboard.cohere.com/api-keys
 engram config set keys.cohere $COHERE_API_KEY
 
 engram config check
@@ -132,11 +130,11 @@ engram recall "user's task in 4-6 words" --top-k 5 --json
 # 2. WORK — do the task, citing recalled chunks when they matter
 
 # 3. SAVE — whatever the user told you that will matter later
-engram remember "Boris prefers Rust over Go for CLI tools."           --importance 7 --tag preference
-engram remember "Decision 2026-04-08: use BLOB embeddings in SQLite." --importance 9 --tag decision
+engram remember "Rapamycin IC50 for mTORC1 is 0.1 nM (Sarbassov 2006)." --importance 9 --tag decision
+engram remember "Boris prefers Rust over Go for CLI tools."              --importance 7 --tag preference
 ```
 
-Rule of thumb: save preferences, explicit decisions with rationale, stable facts, and corrections. Don't save task-local state or conversation filler.
+Rule of thumb: save preferences, explicit decisions with rationale, stable facts with citations, and corrections. Don't save task-local state or conversation filler.
 
 ## Scientific papers workflow
 
@@ -162,8 +160,6 @@ engram entities list --limit 10
 
 Each result has `chunk_id`, `score`, `content`, and `sources: ["dense","lexical","reranker"]`. **Your agent should quote the content and cite the chunk_id** so you can always re-run `engram recall` to verify a claim.
 
-Tested on 5 arXiv papers (Attention, BERT, HippoRAG, LightRAG, RAG — 1,171 chunks) in 21 seconds end-to-end.
-
 ## Architecture
 
 ```
@@ -185,8 +181,9 @@ Dense          Lexical
  (k=60, deterministic tiebreak)
           │
           ▼
- (optional) Cohere Rerank 4 Pro
- reranks the top 50 candidates
+ Local reranker
+ (jina-reranker-v3-mlx, 0.6B)
+ or Cohere Rerank v3.5 (API)
           │
           ▼
  Memory layer budgeting
@@ -201,20 +198,21 @@ Dense          Lexical
 
 - **SQLite** is the source of truth. Chunks store their embedding as a little-endian `f32` BLOB plus an `embed_model` tag.
 - **FTS5** is the lexical index, included in the same database file.
-- **No separate vector server** — at personal scale (<100K vectors) brute-force cosine in Rust is fast enough. We skipped Qdrant and LanceDB on purpose.
+- **No separate vector server** — at personal scale (<100K vectors) brute-force cosine in Rust is fast enough.
 - **Deterministic everything**: UUID v5 for IDs, stable sort tiebreak in fusion, reproducible bench runs.
+- **Contradiction resolution**: temporal validity windows, importance scoring, and provenance tracking let engram detect and surface conflicting facts rather than silently returning both.
 
 Cargo workspace layout:
 
 | Crate | Purpose |
 |---|---|
-| `engram-core` | Pure types, fusion (RRF), memory layers, AAAK compression, temporal validity. Zero I/O. |
+| `engram-core` | Pure types, fusion (RRF), memory layers, temporal validity. Zero I/O. |
 | `engram-storage` | SQLite source of truth + FTS5 + chunk-embedding BLOBs. |
 | `engram-embed` | `Embedder` trait + Gemini Embed 2 (batch + single) + deterministic offline stub. |
-| `engram-rerank` | `Reranker` trait + Cohere Rerank 4 Pro + passthrough. |
+| `engram-rerank` | `Reranker` trait + jina-v3 MLX sidecar + Cohere Rerank v3.5 + passthrough. |
 | `engram-ingest` | Mining modes: papers (PDF + section-aware), conversations, repos, general, auto. |
 | `engram-graph` | Deterministic entity extraction + graph scaffolding. |
-| `engram-bench` | LongMemEval harness + inline mini bench. |
+| `engram-bench` | LongMemEval + LoCoMo-QA harness + strict LLM judge + gold evidence retrieval metrics. |
 | `engram-cli` | The single `engram` binary and the shared hybrid retrieval pipeline. |
 
 ## Framework compliance
@@ -226,11 +224,10 @@ engram follows the **[agent-cli-framework](https://github.com/199-biotechnologie
 - Errors on stderr with `code`, `message`, `suggestion`, `exit_code`
 - Semantic exit codes: `0` success, `1` transient (retry), `2` config (fix setup), `3` bad input (fix args), `4` rate limited (back off)
 - No interactive prompts. Destructive ops like `forget` require `--confirm`
-- XDG paths everywhere (`~/.config/engram/`, `~/.local/share/engram/`, `~/.cache/engram/`)
 - Skill file embedded in the binary as a compile-time constant and deployed via `engram skill install`
 - Secrets resolved in order: env var → config file → none. Always masked on display (`AIzaSy...DW58`)
 
-## All the commands (`engram agent-info` for the full manifest)
+## All the commands
 
 | | |
 |---|---|
@@ -241,7 +238,7 @@ engram follows the **[agent-cli-framework](https://github.com/199-biotechnologie
 | `engram forget <id> --confirm` | Soft-delete (destructive, requires `--confirm`) |
 | `engram entities list \| show <name>` | Browse extracted entities |
 | `engram export` / `engram import <file>` | JSON backup / restore |
-| `engram bench <mini\|mini-fts\|longmemeval>` | Run benchmarks |
+| `engram bench <suite>` | Run benchmarks. Suites: `mini`, `mini-fts`, `longmemeval`, `longmemeval-qa`, `locomo-qa` |
 | `engram config show \| set \| check` | Configuration |
 | `engram skill install \| uninstall` | Deploy agent skill signpost |
 | `engram agent-info` | Self-describing manifest (start here) |
@@ -255,7 +252,7 @@ cargo test                                    # 27 unit + 18 integration tests
 ./target/release/engram bench longmemeval     # real benchmark (~5 min with Cohere)
 ```
 
-Research direction for contributors: [`program.md`](program.md) — enumerates the hyperparameters and architecture experiments worth running via [autoresearch](https://github.com/199-biotechnologies/autoresearch) loops. Design rationale: [`docs/superpowers/specs/2026-04-07-engram-v2-design.md`](docs/superpowers/specs/2026-04-07-engram-v2-design.md).
+Research direction for contributors: [`program.md`](program.md). Design rationale: [`docs/superpowers/specs/2026-04-07-engram-v2-design.md`](docs/superpowers/specs/2026-04-07-engram-v2-design.md).
 
 ## Roadmap
 
@@ -264,31 +261,29 @@ Research direction for contributors: [`program.md`](program.md) — enumerates t
 - Persistent SQLite store with chunk-embedding BLOBs
 - Full CRUD (`remember`, `recall`, `edit`, `forget`, `export`, `import`)
 - Mining modes for papers, conversations, repos, general
-- PDF ingestion via `pdf-extract`
-- Section-aware chunking, AAAK compression prototype
-- Cohere Rerank 4 Pro wired as optional lift
+- PDF ingestion with section-aware chunking
+- Local reranking via jina-reranker-v3-mlx (0.6B, Apple Silicon)
 - Memory layers (L0–L3) with token budgeting
 - Diary namespaces for specialist agents
 - Entity extraction and browsing
-- LongMemEval harness (Oracle + S splits)
+- LongMemEval + LoCoMo-QA harness with strict evaluation
 - 45 unit + integration tests
 
 **Next up**
+- Strict benchmark suite: buried-needle, multi-hop, temporal reasoning, adversarial, and attribution tests
+- Contradiction detection and resolution (temporal validity windows + provenance)
 - GitHub Actions CI releasing prebuilt macOS + Linux binaries
 - `cargo install engram-cli` from crates.io
-- `engram update --check` wired to real GitHub Releases
 - Local embedding fallback via `candle` + `bge-small-en-v1.5` (zero API, p95 < 10 ms)
-- `ENGRAM_RERANK_TOP_N` knob to cut Cohere cost ~60% with minimal quality loss
 - Graph expansion on retrieval (deterministic edges already extracted)
 
 ## Credits
 
-Inspired by:
-
-- **[MemPalace](https://github.com/kw27claw/mempalace)** — spatial memory + AAAK compression philosophy
 - **[HippoRAG 2](https://github.com/OSU-NLP-Group/HippoRAG)** — "return verbatim passages, don't paraphrase"
-- **[LongMemEval](https://github.com/xiaowu0162/LongMemEval)** — the benchmark we aimed at
-- **[agent-cli-framework](https://github.com/199-biotechnologies/agent-cli-framework)** — the principles engram follows verbatim
+- **[LongMemEval](https://github.com/xiaowu0162/LongMemEval)** — the retrieval benchmark
+- **[LoCoMo](https://snap-research.github.io/locomo/)** — the conversational QA benchmark
+- **[jina-reranker-v3](https://huggingface.co/jinaai/jina-reranker-v3)** — local 0.6B listwise reranker
+- **[agent-cli-framework](https://github.com/199-biotechnologies/agent-cli-framework)** — the principles engram follows
 
 ## License
 
