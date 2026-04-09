@@ -95,8 +95,8 @@ Any candidate must:
 
 ## Prior autoresearch milestones (different loop, for context)
 
-- LongMemEval S 500-q full run: R@5 = 0.99 (BEAT MemPalace 0.984 by 0.6pt) with plain
-  hybrid Gemini + FTS + RRF, no rerank. Retrieval is not the bottleneck.
+- LongMemEval S 500-q full run: R@5 = 0.99 with plain hybrid Gemini + FTS + RRF,
+  no rerank. Retrieval is not the bottleneck.
 - Mini bench: saturated at R@1 = 1.0 since run 4 (architectural: added Gemini dense).
 
 ## When stuck
