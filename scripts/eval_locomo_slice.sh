@@ -14,6 +14,10 @@ set -a
 source scripts/experiment.vars
 set +a
 
+# If GEMINI_API_KEY env var is expired, unset it so the binary falls
+# back to the config-file key via resolve_secret("GEMINI_API_KEY", "keys.gemini").
+unset GEMINI_API_KEY 2>/dev/null || true
+
 : "${ENGRAM_LOCOMO_LIMIT:=50}"
 : "${ENGRAM_LOCOMO_TOPK:=5}"
 : "${ENGRAM_ANSWERER:=openai/gpt-5.4}"

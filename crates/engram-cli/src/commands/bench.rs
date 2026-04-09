@@ -156,7 +156,10 @@ async fn run_longmemeval_qa(
                 )
             })?;
 
-    let embedder = GeminiEmbedder::new(gemini_key);
+    let mut embedder = GeminiEmbedder::new(gemini_key);
+    if let Ok(model) = std::env::var("GEMINI_EMBED_MODEL") {
+        embedder = embedder.with_model(model);
+    }
     let answerer = OpenRouterClient::new(openrouter_key.clone()).with_model(answerer_model.clone());
     let judge = OpenRouterClient::new(openrouter_key).with_model(judge_model.clone());
 
@@ -284,7 +287,10 @@ async fn run_locomo_qa(
                 )
             })?;
 
-    let embedder = GeminiEmbedder::new(gemini_key);
+    let mut embedder = GeminiEmbedder::new(gemini_key);
+    if let Ok(model) = std::env::var("GEMINI_EMBED_MODEL") {
+        embedder = embedder.with_model(model);
+    }
     let answerer = OpenRouterClient::new(openrouter_key.clone()).with_model(answerer_model.clone());
     let judge = OpenRouterClient::new(openrouter_key).with_model(judge_model.clone());
 
