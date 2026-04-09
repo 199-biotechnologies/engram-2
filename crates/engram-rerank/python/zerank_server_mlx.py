@@ -103,24 +103,76 @@ def _prepare_mlx_dir(src: str) -> str:
     return tmpdir
 
 
-def load_model() -> Dict[str, Any]:
-    """Download (cached) the zerank-2 snapshot, patch to Qwen3, and load via
-    mlx_lm. Returns a bundle dict consumed by `score_pairs`.
+def _build_compiled_forward(model):
+    """Compile only the transformer forward (not the downstream gather +
+    yes-token extract) via `mx.compile(shapeless=True)`. Pattern lifted
+    from `bgconley/qwen3-reranker-multi`: the gather+extract step is only
+    a few hundred microseconds so compiling it is pointless AND it uses
+    dynamic advanced indexing that shapeless mode can't shape-infer.
+
+    Returns a callable `compiled(input_ids) -> hidden [B, S, H]` or None
+    if compilation is unavailable (we fall back to eager in score_pairs).
     """
-    src = snapshot_download(MODEL_NAME, revision=MODEL_REVISION)
+    def _fwd(input_ids):
+        return model.model(input_ids)
 
-    # Pull yes_token_id from the ORIGINAL config (patched copy drops it).
-    with open(os.path.join(src, "config.json")) as f:
-        orig_cfg = json.load(f)
-    yes_token_id = int(orig_cfg.get("yes_token_id", DEFAULT_YES_TOKEN_ID))
-    pad_token_id = int(orig_cfg.get("pad_token_id", DEFAULT_PAD_TOKEN_ID))
+    try:
+        return mx.compile(_fwd, shapeless=True)
+    except Exception as e:
+        sys.stderr.write(f"[mlx] mx.compile failed, using eager fallback: {e}\n")
+        return None
 
-    mlx_dir = _prepare_mlx_dir(src)
+
+def load_model() -> Dict[str, Any]:
+    """Load the zerank-2 MLX model and return a bundle for `score_pairs`.
+
+    Two paths:
+
+    1. `ENGRAM_ZERANK_MLX_PATH` set → load directly from that local directory.
+       Used for pre-converted / pre-quantized variants (e.g. zerank-2-q8 from
+       `mlx_lm.convert`). The directory must already have `model_type=qwen3`
+       in config.json; no runtime patching is applied.
+
+    2. Otherwise → snapshot_download the HF model, symlink into a tempdir,
+       patch `config.json` (model_type zeroentropy→qwen3) and
+       `tokenizer_config.json` (drop custom class), then mlx_lm.load.
+
+    The loaded model is wrapped in a compiled score function via
+    `mx.compile(shapeless=True)` so repeated calls reuse a fused Metal
+    graph. Set `ENGRAM_ZERANK_MLX_NO_COMPILE=1` to disable compilation
+    (useful when debugging numerical drift).
+    """
+    local_path = os.environ.get("ENGRAM_ZERANK_MLX_PATH")
+    if local_path:
+        if not os.path.isdir(local_path):
+            raise FileNotFoundError(
+                f"ENGRAM_ZERANK_MLX_PATH={local_path} does not exist"
+            )
+        cfg_path = os.path.join(local_path, "config.json")
+        with open(cfg_path) as f:
+            cfg = json.load(f)
+        # Pre-converted variants may have dropped the yes_token_id field during
+        # mlx_lm.convert; fall back to the zerank-2 default.
+        yes_token_id = int(cfg.get("yes_token_id", DEFAULT_YES_TOKEN_ID))
+        pad_token_id = int(cfg.get("pad_token_id", DEFAULT_PAD_TOKEN_ID))
+        mlx_dir = local_path
+    else:
+        src = snapshot_download(MODEL_NAME, revision=MODEL_REVISION)
+        with open(os.path.join(src, "config.json")) as f:
+            orig_cfg = json.load(f)
+        yes_token_id = int(orig_cfg.get("yes_token_id", DEFAULT_YES_TOKEN_ID))
+        pad_token_id = int(orig_cfg.get("pad_token_id", DEFAULT_PAD_TOKEN_ID))
+        mlx_dir = _prepare_mlx_dir(src)
 
     import mlx_lm
 
     model, tokenizer = mlx_lm.load(mlx_dir)
     model.eval()
+
+    if os.environ.get("ENGRAM_ZERANK_MLX_NO_COMPILE"):
+        compiled_forward = None
+    else:
+        compiled_forward = _build_compiled_forward(model)
 
     return {
         "model": model,
@@ -128,6 +180,7 @@ def load_model() -> Dict[str, Any]:
         "yes_token_id": yes_token_id,
         "pad_token_id": pad_token_id,
         "mlx_dir": mlx_dir,
+        "compiled_forward": compiled_forward,
     }
 
 
@@ -196,23 +249,30 @@ def score_pairs(bundle: Dict[str, Any], pairs: List[Tuple[str, str]]) -> List[fl
     encoded = _encode_batch(tokenizer, prompts)
     input_ids, attention_mask = _pad_right(encoded, pad_token_id)
 
-    B, S = input_ids.shape
+    # Transformer forward (compiled via mx.compile when available, eager
+    # otherwise). Compiling just the forward (and not the gather+extract
+    # below) is the pattern from bgconley/qwen3-reranker-multi — the
+    # gather+extract is cheap and uses dynamic advanced indexing that
+    # breaks mx.compile(shapeless=True).
+    compiled_forward = bundle.get("compiled_forward")
+    if compiled_forward is not None:
+        hidden = compiled_forward(input_ids)  # [B, S, H]
+    else:
+        hidden = model.model(input_ids)  # [B, S, H]
 
-    # Forward pass → [B, S, V]
-    logits = model(input_ids)
-
-    # last_positions[b] = index of last non-pad token for row b
-    last_positions = mx.sum(attention_mask, axis=1) - 1  # [B]
-
-    # Gather logits at [b, last_positions[b], yes_token_id] for each b.
-    # MLX supports numpy-style advanced indexing; we do it vectorised via
-    # two 1-D index arrays (rows + last_positions). Stay in bf16 — the
-    # division preserves it and tolist() does the final conversion to
-    # Python float, so an explicit float32 cast would be wasted work.
+    # Yes-token shortcut (quant-compatible): gather hidden at last non-pad
+    # position per row, project ONLY that [B, H] slice through the tied
+    # embedding to get [B, V], then take the yes_token_id column and /5.
+    # This skips the full [B, S, V=151936] projection that model(...)
+    # would compute, saving ~S× the work (S ≈ 150 typical).
+    last_positions = mx.sum(attention_mask, axis=1) - 1
+    B = input_ids.shape[0]
     rows = mx.arange(B)
-    picked = logits[rows, last_positions, :]  # [B, V]
-    yes_logits = picked[:, yes_token_id]      # [B]
+    hidden_last = hidden[rows, last_positions, :]  # [B, H]
+    logits_last = model.model.embed_tokens.as_linear(hidden_last)  # [B, V]
+    yes_logits = logits_last[:, yes_token_id]  # [B]
     scores = yes_logits / 5.0
+
     mx.eval(scores)
     return [float(s) for s in scores.tolist()]
 
