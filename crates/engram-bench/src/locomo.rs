@@ -43,20 +43,6 @@ where
     }
 }
 
-#[allow(dead_code)]
-fn deserialize_answer_flex<'de, D>(d: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let v = serde_json::Value::deserialize(d)?;
-    match v {
-        serde_json::Value::String(s) => Ok(s),
-        serde_json::Value::Number(n) => Ok(n.to_string()),
-        serde_json::Value::Bool(b) => Ok(b.to_string()),
-        serde_json::Value::Null => Ok(String::new()),
-        other => Ok(other.to_string()),
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocomoSample {

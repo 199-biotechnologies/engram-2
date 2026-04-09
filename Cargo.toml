@@ -57,7 +57,6 @@ toml = "0.8"
 # Output
 comfy-table = "7"
 owo-colors  = "4"
-indicatif   = "0.17"
 
 # Paths
 directories = "5"
@@ -74,10 +73,8 @@ assert_cmd = "2"
 predicates = "3"
 
 # Bench
-criterion = { version = "0.5", features = ["html_reports"] }
 
 # Self update
-self_update = { version = "0.43", default-features = false, features = ["rustls", "compression-flate2", "archive-tar"] }
 
 # Hashing / IDs
 uuid = { version = "1", features = ["v4", "v5", "serde"] }

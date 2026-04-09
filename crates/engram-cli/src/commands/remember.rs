@@ -69,7 +69,7 @@ pub async fn run(
             let v = e
                 .embed_batch(&chunk_texts, TaskMode::RetrievalDocument)
                 .await?;
-            (v, "gemini-embedding-001")
+            (v, "gemini")
         } else {
             let e = StubEmbedder::default();
             let v = e

@@ -16,4 +16,3 @@ uuid.workspace = true
 ordered-float.workspace = true
 
 [dev-dependencies]
-criterion.workspace = true

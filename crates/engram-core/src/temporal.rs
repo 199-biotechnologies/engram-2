@@ -1,6 +1,6 @@
 //! Temporal validity windows — facts can be valid for a date range.
 //!
-//! Inspired by MemPalace's temporal knowledge graph.
+
 
 use crate::types::Memory;
 use chrono::{DateTime, Utc};

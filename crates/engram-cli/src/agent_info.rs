@@ -31,7 +31,7 @@ pub fn run(_ctx: &AppContext) -> Result<(), CliError> {
             "export [--format json]": "Export all memories as JSON",
             "import <file>": "Import memories from a JSON export",
             "entities [list|show <name>]": "Browse the entity graph. Alias: list|ls",
-            "bench <suite>": "Run a benchmark. Suites: mini | mini-fts | longmemeval. Flags: --limit <n>, --download",
+            "bench <suite>": "Run a benchmark. Suites: mini | mini-fts | longmemeval | longmemeval-qa | locomo-qa. Flags: --limit <n>, --download, --answerer, --judge",
             "config show": "Display effective configuration",
             "config set <key> <value>": "Persist a configuration value to ~/.config/engram/config.toml",
             "config check": "Validate configured API keys",
@@ -62,7 +62,7 @@ pub fn run(_ctx: &AppContext) -> Result<(), CliError> {
             "COHERE_API_KEY": "Cohere rerank key (optional, improves R@1)",
             "ENGRAM_RRF_K": "RRF smoothing constant (default: 60)",
             "ENGRAM_EMBEDDER": "Force embedder: gemini|stub (default: gemini if key set)",
-            "ENGRAM_RERANKER": "Force reranker: cohere|passthrough (default: cohere if key set)",
+            "ENGRAM_RERANK_PROVIDER": "Force reranker: cohere|zerank2|none (default: cohere if key set)",
             "ENGRAM_LME_SPLIT": "LongMemEval split: s|oracle (default: s)"
         },
         "config_path": engram_storage::paths::config_path().to_string_lossy(),
@@ -71,13 +71,12 @@ pub fn run(_ctx: &AppContext) -> Result<(), CliError> {
         "cache_path": engram_storage::paths::cache_dir().to_string_lossy(),
         "providers": {
             "embeddings": ["gemini-embedding-001 (cloud, 768 dims)", "stub (offline, deterministic)"],
-            "rerankers": ["rerank-english-v3.0 (cloud)", "passthrough (none)"]
+            "rerankers": ["rerank-v3.5 (cloud)", "jina-reranker-v3-mlx (local, 0.6B)", "passthrough (none)"]
         },
         "benchmarks": {
             "longmemeval_s": {
                 "url": "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned",
                 "description": "500 questions × ~48 sessions/q, 96% distractors",
-                "mempalace_baseline_R@5": 0.984,
                 "engram_v2_R@1": 0.91,
                 "engram_v2_R@5": 0.99,
                 "engram_v2_R@10": 0.998

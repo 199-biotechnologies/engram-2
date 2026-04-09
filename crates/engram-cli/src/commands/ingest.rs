@@ -40,14 +40,14 @@ pub async fn run(
     let mut memories_created = 0u32;
     let mut chunks_created = 0u32;
     // Cost accounting for Gemini embeddings: ~4 chars per token heuristic,
-    // $0.15 per 1M input tokens for gemini-embedding-001 (priced 2026-04).
+    // $0.15 per 1M input tokens for gemini-embedding-2-preview (priced 2026-04).
     let mut total_embedded_chars: usize = 0;
 
     // Embedder: env var → config file → stub fallback
     let force_stub = std::env::var("ENGRAM_BENCH_FORCE_STUB").is_ok();
     let gemini_key = crate::commands::config::resolve_secret("GEMINI_API_KEY", "keys.gemini");
     let have_gemini = gemini_key.is_some() && !force_stub;
-    let model_name = if have_gemini { "gemini-embedding-001" } else { "stub" };
+    let model_name = if have_gemini { "gemini" } else { "stub" };
 
     for file in files {
         let text = if engram_ingest::pdf::is_pdf(&file) {

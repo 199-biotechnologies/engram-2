@@ -58,7 +58,7 @@ pub async fn run(
             if !force_stub && gemini_key.is_some() {
                 let e = GeminiEmbedder::new(gemini_key.unwrap());
                 let v = e.embed_batch(&chunk_texts, TaskMode::RetrievalDocument).await?;
-                (v, "gemini-embedding-001")
+                (v, "gemini")
             } else {
                 let e = StubEmbedder::default();
                 let v = e.embed_batch(&chunk_texts, TaskMode::RetrievalDocument).await?;

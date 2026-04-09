@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![LongMemEval S R@5](https://img.shields.io/badge/LongMemEval_S_R%405-0.99-brightgreen)](#benchmarks)
 [![LoCoMo-QA](https://img.shields.io/badge/LoCoMo--QA-84%25-blue)](#benchmarks)
-[![tests](https://img.shields.io/badge/tests-45%20passing-brightgreen)](crates/engram-cli/tests/cli.rs)
+[![tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)](crates/engram-cli/tests/cli.rs)
 
 ```bash
 git clone https://github.com/199-biotechnologies/engram-2

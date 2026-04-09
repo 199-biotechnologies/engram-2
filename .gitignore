@@ -5,3 +5,14 @@ data/longmemeval/cache/
 *.swp
 .DS_Store
 .claude/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Autoresearch experiment artifacts
+benchmarks/ar/
+.autoresearch/
+
+# Benchmark checkpoints (large, generated)
+benchmarks/*.checkpoint.jsonl

@@ -1,4 +1,4 @@
-//! Cohere Rerank 4 Pro client.
+//! Cohere rerank-v3.5 client.
 
 use crate::{RerankCandidate, RerankError, RerankedResult, Reranker};
 use async_trait::async_trait;

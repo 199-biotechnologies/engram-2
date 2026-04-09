@@ -50,7 +50,7 @@ pub struct Chunk {
     pub position: u32, // ordinal within the parent memory
     pub section: Option<String>, // for papers: "Methods > Cell Culture"
     pub token_count: Option<u32>,
-    pub embedding_id: Option<String>, // pointer into LanceDB
+    pub embedding_id: Option<String>, // reserved for external index
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,7 +107,7 @@ pub enum EdgeKind {
 pub enum Layer {
     /// L0: identity / system prompt (~50 tokens).
     Identity,
-    /// L1: critical facts, AAAK-encoded (~120 tokens).
+    /// L1: critical facts, condensed (~120 tokens).
     Critical,
     /// L2: topic-specific context loaded on demand.
     Topic,

@@ -5,7 +5,7 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "SQLite + LanceDB + FTS5 storage for engram v2"
+description = "SQLite + FTS5 storage for engram v2"
 
 [dependencies]
 engram-core.workspace = true
