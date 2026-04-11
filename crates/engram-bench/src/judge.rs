@@ -26,7 +26,12 @@ const JUDGE_SYSTEM: &str =
      1. The candidate states the same fact(s) as the reference, possibly worded differently. \
         'Business Administration degree' ≡ 'BA in Business Administration'.\n\
      2. Numeric equivalence. '1.5 hours' ≡ '90 minutes'. '45 minutes each way' ≡ '90 minutes total'.\n\
-     3. Date format differences. '2024-03-15' ≡ 'March 15, 2024'.\n\n\
+     3. Date format differences. '2024-03-15' ≡ 'March 15, 2024'. '13 August' ≡ '13 August, 2023' \
+        (adding a year that is contextually correct is fine).\n\
+     4. LIST QUESTIONS — superset rule: if the reference lists N items and the candidate names \
+        ALL N of them, the answer is CORRECT even if the candidate also lists additional items. \
+        Extra items that are factually consistent do not invalidate the answer. \
+        Example: gold='beach, mountains, forest', candidate='beach, mountains, forest, canyon' → CORRECT.\n\n\
      INCORRECT if:\n\
      - LIST QUESTIONS: the reference lists N items and the candidate names fewer than N. \
        Missing ANY gold item makes the answer INCORRECT, even if the items it does name are right. \
@@ -34,7 +39,6 @@ const JUDGE_SYSTEM: &str =
      - The candidate gives a vague paraphrase instead of the specific fact. \
        Example: gold='mentors, family, friends', candidate='people who support her' → INCORRECT.\n\
      - The candidate hedges or equivocates. 'once or twice' when the gold is '2' → INCORRECT.\n\
-     - The candidate adds fabricated details not in the reference.\n\
      - The candidate contradicts the reference on any key fact.\n\
      - The candidate refuses ('I don't know') when the reference has a definite answer.\n\
      - The candidate gives incorrect specifics (wrong name, wrong number, wrong date).\n\n\

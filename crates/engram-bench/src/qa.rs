@@ -79,13 +79,20 @@ const ANSWERER_SYSTEM: &str =
      2. Scan ALL retrieved sessions for those entities. Quote the exact text spans.\n\
      3. Collect ALL relevant facts before writing the answer. For list questions, ensure you \
         have found EVERY item across ALL sessions, not just the first match.\n\n\
+     TEMPORAL RESOLUTION (CRITICAL):\n\
+     Every session header shows an absolute date like '[session_3 — 2:30 pm on 12 May, 2023]'.\n\
+     When the conversation text says 'yesterday', 'last week', 'last year', etc., you MUST \
+     convert these to absolute dates using the session header as the anchor.\n\
+     Example: if session header is '25 May 2023' and the text says 'last year', the answer \
+     is '2022', NOT 'last year'. If the text says 'last Saturday', compute the actual date.\n\
+     NEVER repeat a relative date as your answer — always resolve it.\n\n\
      PRECISION RULES:\n\
      - Use the EXACT terms from the context. Do not paraphrase, generalise, or summarise.\n\
      - For numbers and dates: give the precise value from the context.\n\
-     - For 'when' questions: resolve relative dates ('yesterday', 'last week') to absolute dates \
-       using the session header timestamps.\n\
      - For list questions ('what books', 'what activities'): extract EVERY item mentioned across \
        ALL sessions. Missing items is a failure. Comma-separate the complete list.\n\
+     - Give ONLY the direct answer. No surrounding narrative, no extra context, no qualifiers.\n\
+     - For yes/no or inference questions, give a clear answer with brief reasoning.\n\
      - If the answer is genuinely not in the context, say 'I don't know'. Do NOT guess or \
        fabricate. An honest 'I don't know' is better than a wrong or incomplete answer.\n\n\
      OUTPUT FORMAT:\n\
@@ -735,14 +742,17 @@ where
                 .collect();
 
             // Build context for the answerer.
+            // Each chunk text already has a header like
+            // "[session_3 — 2:30 pm on 12 May, 2023]\n..." from
+            // flatten_conversation, so we pass it as-is to avoid
+            // duplicate/confusing headers.
             let context: String = top_ids
                 .iter()
-                .enumerate()
-                .filter_map(|(i, id)| {
+                .filter_map(|id| {
                     pending_chunks
                         .iter()
                         .find(|(cid, _, _)| cid == id)
-                        .map(|(_, text, sid)| format!("[session {} — {}]\n{}", i + 1, sid, text))
+                        .map(|(_, text, _)| text.as_str())
                 })
                 .collect::<Vec<_>>()
                 .join("\n\n");
@@ -775,16 +785,26 @@ where
             // LoCoMo carries gold evidence as `D{N}:{turn}` references.
             // Map these to session IDs (D1 → session_1) and compute R@5
             // against the retrieved_sessions list.
+            //
+            // Non-standard formats in the dataset:
+            //   "D8:6; D9:17"          → semicolon-separated
+            //   "D9:1 D4:4 D4:6"       → space-separated
+            //   "D"                     → bare D (skip)
+            //   "D:11:26"              → malformed (skip)
+            // We split on whitespace and semicolons first, then parse each token.
             let gold_sessions: std::collections::HashSet<String> = qa
                 .evidence
                 .iter()
-                .filter_map(|e| {
-                    // "D1:3" → "session_1"
-                    e.split(':')
-                        .next()
-                        .and_then(|d| d.strip_prefix('D'))
-                        .and_then(|n| n.parse::<u32>().ok())
-                        .map(|n| format!("session_{n}"))
+                .flat_map(|e| {
+                    e.split(|c: char| c == ';' || c.is_whitespace())
+                        .filter(|tok| !tok.is_empty())
+                })
+                .filter_map(|tok| {
+                    // "D1:3" → "session_1", "D1" → "session_1"
+                    let d_part = tok.split(':').next()?;
+                    let n_str = d_part.strip_prefix('D')?;
+                    let n: u32 = n_str.parse().ok()?;
+                    Some(format!("session_{n}"))
                 })
                 .collect();
             let r5 = if gold_sessions.is_empty() {
