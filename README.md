@@ -315,5 +315,5 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-Built by **[199 Biotechnologies](https://github.com/199-biotechnologies)**.
+Built by **[Paperfot AI (SG) Pte Ltd](https://github.com/199-biotechnologies)**.
 Questions? Open an issue. Pull requests welcome.
