@@ -1,7 +1,10 @@
 target/
 data/longmemeval/raw/
 data/longmemeval/cache/
+data/locomo_plus/
+data/memoryagentbench/
 .autoresearch/loop.lock
+.tmp-home/
 *.swp
 .DS_Store
 .claude/
@@ -16,3 +19,4 @@ benchmarks/ar/
 
 # Benchmark checkpoints (large, generated)
 benchmarks/*.checkpoint.jsonl
+benchmarks/smoketest-*.json
