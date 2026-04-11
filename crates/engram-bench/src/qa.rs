@@ -1054,6 +1054,7 @@ where
     let mut answerer_completion_tokens: u64 = 0;
     let mut judge_prompt_tokens: u64 = 0;
     let mut judge_completion_tokens: u64 = 0;
+    let mut cue_missed: usize = 0;
 
     for (i, entry) in dataset.entries.iter().take(n).enumerate() {
         let run_start = Instant::now();
@@ -1238,6 +1239,10 @@ where
             .collect();
         let r5 = recall_at_k(&retrieved_sessions, &answer_session_ids, 5);
         let rr = reciprocal_rank(&retrieved_sessions, &answer_session_ids, 10);
+        let cue_retrieved = r5 > 0.0 || answer_session_ids.is_empty();
+        if !cue_retrieved {
+            cue_missed += 1;
+        }
         total_recall5 += r5;
         total_mrr += rr;
 
@@ -1259,11 +1264,12 @@ where
         let latency_ms = run_start.elapsed().as_millis() as u64;
         latencies.push(latency_ms);
         tracing::info!(
-            "[locomo-plus {} / {}] {} correct={} r5={:.2} latency={}ms",
+            "[locomo-plus {} / {}] {} correct={} cue_retrieved={} r5={:.2} latency={}ms",
             i + 1,
             n,
             entry.relation_type,
             verdict.correct,
+            cue_retrieved,
             r5,
             latency_ms
         );
@@ -1343,6 +1349,25 @@ where
         stats.accuracy = stats.correct as f32 / stats.total.max(1) as f32;
     }
 
+    let cue_miss_pct = if scored > 0 {
+        cue_missed as f32 / scored as f32 * 100.0
+    } else {
+        0.0
+    };
+    tracing::info!(
+        "locomo-plus summary: cue_missed={}/{} ({:.1}%)",
+        cue_missed,
+        scored,
+        cue_miss_pct
+    );
+    let mut notes = Vec::new();
+    if cue_missed > 0 {
+        notes.push(format!(
+            "cue_missed={}/{} ({:.1}%) — reranker failed to surface cue pseudo-session",
+            cue_missed, scored, cue_miss_pct
+        ));
+    }
+
     Ok(QaReport {
         suite: "locomo_plus_qa".into(),
         questions_evaluated: scored,
@@ -1362,7 +1387,7 @@ where
         by_question_type: by_type,
         by_source: HashMap::new(),
         unscored_count: 0,
-        notes: Vec::new(),
+        notes,
     })
 }
 
