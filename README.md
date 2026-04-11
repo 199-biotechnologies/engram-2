@@ -5,7 +5,7 @@
 [![rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![LongMemEval S R@5](https://img.shields.io/badge/LongMemEval_S_R%405-0.99-brightgreen)](#benchmarks)
-[![LoCoMo-QA](https://img.shields.io/badge/LoCoMo--QA-84%25-blue)](#benchmarks)
+[![LoCoMo-QA](https://img.shields.io/badge/LoCoMo--QA_strict-68%25-blue)](#benchmarks)
 [![tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)](crates/engram-cli/tests/cli.rs)
 
 ```bash
@@ -54,15 +54,29 @@ Full 500-question **[LongMemEval S split](https://huggingface.co/datasets/xiaowu
 
 **[LoCoMo](https://snap-research.github.io/locomo/)** is a multi-turn conversational memory benchmark with 5 question categories: single-hop factoid, multi-hop, temporal reasoning, open-ended, and adversarial. Harder than LongMemEval because sessions contain real dialogue with pronouns, time references, and contradictions.
 
-| Reranker | Embed | Accuracy (50q) | R@5 | MRR | Latency | Local? |
-|---|---|---:|---:|---:|---:|---|
-| **jina-reranker-v3 MLX** (0.6B) | gemini-embedding-001 | **84.0%** | TBD | TBD | 8.0s/q | **yes** |
-| Cohere rerank-v3.5 | gemini-embedding-001 | 84.0% | TBD | TBD | 4.6s/q | no (API) |
-| No rerank (RRF only) | gemini-embedding-001 | 72.0% | TBD | TBD | 3.2s/q | yes |
+#### engram results (strict judge — no partial answers, no hedging)
 
-Answerer: `openai/gpt-5.4`. Judge: `openai/gpt-5.4` (strict mode — no partial answers, no vague paraphrases). R@5 now computed from LoCoMo gold evidence annotations.
+| Reranker | Embed | Accuracy (50q) | R@5 | Category 1 | Category 2 | Category 3 |
+|---|---|---:|---:|---:|---:|---:|
+| **Cohere rerank-v3.5** | gemini-embed-2 | **68.0%** | 0.860 | 37% | 88% | 86% |
+| jina-reranker-v3 MLX (0.6B) | gemini-embed-001 | ~68%* | — | — | — | — |
+| No rerank (RRF only) | gemini-embed-2 | ~58%* | — | — | — | — |
 
-**Note:** We're actively hardening the evaluation pipeline. Cross-model validation (Claude Sonnet 4.6 as judge) showed that judge choice swings accuracy by up to 18 points, so we've tightened the judge to demand precision: complete lists, exact facts, no hedging. Numbers above reflect the lenient judge; strict-mode results incoming.
+*Estimated from prior lenient-judge runs scaled by the observed 84%→68% lenient-to-strict ratio. Full strict reruns pending.
+
+Answerer: `openai/gpt-5.4`. Judge: `openai/gpt-5.4` (strict — complete lists required, exact terms, no hedging, relative dates must be resolved to absolute).
+
+#### SOTA comparison
+
+| System | LoCoMo Accuracy | Answerer | Notes |
+|---|---:|---|---|
+| EverMemOS | ~92% | — | Unreleased; approximate from leaderboard |
+| MemMachine v0.2 | 91.7% | gpt-4.1-mini | [arXiv:2604.04853](https://arxiv.org/abs/2604.04853) |
+| **engram** | **68%** | gpt-5.4 | Strict judge. 200q run pending for tighter CI. |
+
+**Where we stand:** engram's retrieval is strong (R@5=0.86 — gold evidence in top-5 for 86% of questions) but end-to-end accuracy trails SOTA by ~24 points. The gap is in the answerer, not retrieval — 88% of wrong answers have correct context in the retrieved chunks. Category 1 (adversarial/speaker-confusion) at 37% is the primary bottleneck.
+
+**Note:** Direct comparison is approximate — SOTA systems may use different judges, prompts, and evaluation protocols. We use a deliberately strict judge that rejects partial list answers and unresolved relative dates.
 
 ### Reproducing
 
