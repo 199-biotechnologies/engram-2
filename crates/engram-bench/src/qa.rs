@@ -99,8 +99,8 @@ const ANSWERER_SYSTEM: &str =
      - If the answer is genuinely not in the context, say 'I don't know'. Do NOT guess or \
        fabricate. An honest 'I don't know' is better than a wrong or incomplete answer.\n\n\
      ANSWER FORM (CRITICAL):\n\
-     - For 'what is X's status/relationship?' → give the state word: 'Single', 'Married', etc.\n\
-     - For 'what does X do?' → give the activity names: 'running, pottery', not descriptions.\n\
+     - For 'what is X's status/relationship?' → give the state word from the context, not a description.\n\
+     - For 'what does X do?' → give the activity names, not descriptions.\n\
      - For 'what books/items?' → give the specific titles or names, nothing else.\n\
      - For 'how many?' → give the number.\n\
      - For 'how long?' → give the duration as stated ('six months', not '139 days').\n\
@@ -1275,7 +1275,7 @@ where
         );
 
         let result = QaRunResult {
-            question_id: format!("locomo_plus:{i}"),
+            question_id: format!("locomo_plus:{i}:host={sample_key}"),
             question_type: entry.relation_type.clone(),
             question,
             gold_answer: entry.cue_dialogue.clone(),

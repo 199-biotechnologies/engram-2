@@ -99,8 +99,9 @@ pub fn parse_time_gap(s: &str) -> i64 {
 }
 
 pub fn parse_ab_dialogue(s: &str) -> Vec<(char, String)> {
+    let normalized = s.replace("\\n", "\n");
     let mut turns = Vec::new();
-    for line in s.lines() {
+    for line in normalized.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("A:") {
             turns.push(('A', rest.trim().to_string()));
@@ -318,6 +319,16 @@ mod tests {
                 ('A', "how are you".to_string())
             ]
         );
+    }
+
+    #[test]
+    fn parses_escaped_newlines_in_dialogue() {
+        let raw = r#"A: After learning to say 'no', I've felt less stressed.\nB: That's great to hear!"#;
+        let turns = parse_ab_dialogue(raw);
+        assert_eq!(turns.len(), 2);
+        assert_eq!(turns[0].0, 'A');
+        assert_eq!(turns[1].0, 'B');
+        assert!(turns[1].1.contains("great to hear"));
     }
 
     #[test]
