@@ -67,8 +67,11 @@ pub struct MabRowMetadata {
     pub question_types: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_opt_string")]
     pub source: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_haystack_sessions_opt")]
-    pub haystack_sessions: Option<Vec<MabHaystackTurn>>,
+    /// Opaque structure — varies by split: Vec<Turn> for some, Vec<Vec<Vec<Turn>>>
+    /// for LongMemEval rows in Accurate_Retrieval. We don't use this downstream
+    /// (context is the haystack), so we store raw JSON and skip strict parsing.
+    #[serde(default)]
+    pub haystack_sessions: serde_json::Value,
     #[serde(default, deserialize_with = "deserialize_opt_string")]
     pub demo: Option<String>,
     #[serde(default, deserialize_with = "deserialize_opt_vec_string")]
@@ -192,26 +195,6 @@ where
     Ok(out)
 }
 
-fn deserialize_haystack_sessions_opt<'de, D>(d: D) -> Result<Option<Vec<MabHaystackTurn>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let v = serde_json::Value::deserialize(d)?;
-    match v {
-        serde_json::Value::Null => Ok(None),
-        serde_json::Value::Array(_) => serde_json::from_value(v)
-            .map(Some)
-            .map_err(serde::de::Error::custom),
-        serde_json::Value::String(s) if s.trim().is_empty() => Ok(None),
-        serde_json::Value::String(s) => serde_json::from_str::<Vec<MabHaystackTurn>>(&s)
-            .map(Some)
-            .map_err(serde::de::Error::custom),
-        other => Err(serde::de::Error::custom(format!(
-            "expected haystack_sessions array or JSON string, got {other}"
-        ))),
-    }
-}
-
 fn value_to_string(v: &serde_json::Value) -> String {
     match v {
         serde_json::Value::String(s) => s.clone(),
@@ -255,16 +238,8 @@ mod tests {
         assert_eq!(row.questions[0], "q1");
         assert_eq!(row.answers[0], vec!["a1".to_string(), "alias".to_string()]);
         assert_eq!(row.metadata.source.as_deref(), Some("unit"));
-        assert_eq!(
-            row.metadata
-                .haystack_sessions
-                .as_ref()
-                .unwrap()
-                .first()
-                .unwrap()
-                .content,
-            "hello"
-        );
+        // haystack_sessions is opaque — just verify it's present as an array.
+        assert!(row.metadata.haystack_sessions.is_array());
     }
 
     #[test]
