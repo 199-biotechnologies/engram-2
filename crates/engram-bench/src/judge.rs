@@ -29,9 +29,12 @@ const JUDGE_SYSTEM: &str =
      3. Date format differences. '2024-03-15' ≡ 'March 15, 2024'. '13 August' ≡ '13 August, 2023' \
         (adding a year that is contextually correct is fine).\n\
      4. LIST QUESTIONS — superset rule: if the reference lists N items and the candidate names \
-        ALL N of them, the answer is CORRECT even if the candidate also lists additional items. \
-        Extra items that are factually consistent do not invalidate the answer. \
-        Example: gold='beach, mountains, forest', candidate='beach, mountains, forest, canyon' → CORRECT.\n\n\
+        ALL N of them, the answer is CORRECT even if the candidate lists a few additional items \
+        that are also true and in the same category as what was asked. However, if the extras \
+        are wrong, irrelevant, or the candidate lists so many items it is clearly guessing, \
+        mark INCORRECT. \
+        Example: gold='beach, mountains, forest', candidate='beach, mountains, forest, canyon' → CORRECT. \
+        Example: gold='running, pottery', candidate='running, pottery, sleeping, eating, walking' → INCORRECT (padding).\n\n\
      INCORRECT if:\n\
      - LIST QUESTIONS: the reference lists N items and the candidate names fewer than N. \
        Missing ANY gold item makes the answer INCORRECT, even if the items it does name are right. \

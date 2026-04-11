@@ -95,6 +95,13 @@ const ANSWERER_SYSTEM: &str =
      - For yes/no or inference questions, give a clear answer with brief reasoning.\n\
      - If the answer is genuinely not in the context, say 'I don't know'. Do NOT guess or \
        fabricate. An honest 'I don't know' is better than a wrong or incomplete answer.\n\n\
+     ANSWER FORM (CRITICAL):\n\
+     - For 'what is X's status/relationship?' → give the state word: 'Single', 'Married', etc.\n\
+     - For 'what does X do?' → give the activity names: 'running, pottery', not descriptions.\n\
+     - For 'what books/items?' → give the specific titles or names, nothing else.\n\
+     - For 'how many?' → give the number.\n\
+     - For 'how long?' → give the duration as stated ('six months', not '139 days').\n\
+     - NEVER answer with a narrative quote from the conversation. Extract the fact.\n\n\
      OUTPUT FORMAT:\n\
      EVIDENCE: <direct quote(s) from context, citing which session each came from>\n\
      ANSWER: <precise, complete answer using exact terms from context>";
@@ -807,13 +814,18 @@ where
                     Some(format!("session_{n}"))
                 })
                 .collect();
+            // R@k = fraction of gold sessions found in the retrieved set.
+            // For single-evidence questions this is binary (0 or 1). For
+            // multi-hop questions with N gold sessions it rewards partial
+            // retrieval (e.g. 2/3 gold sessions found = 0.667).
             let r5 = if gold_sessions.is_empty() {
                 0f32
             } else {
-                let found = retrieved_sessions
+                let found = gold_sessions
                     .iter()
-                    .any(|s| gold_sessions.contains(s));
-                if found { 1.0 } else { 0.0 }
+                    .filter(|g| retrieved_sessions.contains(g))
+                    .count();
+                found as f32 / gold_sessions.len() as f32
             };
             let rr = if gold_sessions.is_empty() {
                 0f32
@@ -869,7 +881,7 @@ where
                 recall_at_5: r5,
                 mrr: rr,
                 retrieved_sessions,
-                answer_session_ids: Vec::new(),
+                answer_session_ids: gold_sessions.into_iter().collect(),
                 ragas,
                 latency_ms,
                 answerer_prompt_tokens: answer_resp.prompt_tokens.unwrap_or(0),
