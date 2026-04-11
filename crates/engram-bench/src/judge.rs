@@ -78,15 +78,16 @@ pub async fn judge_answer<J: ChatLlm + ?Sized>(
         .find(|l| !l.trim().is_empty())
         .map(|l| l.trim().to_string())
         .unwrap_or_default();
-    let correct = if last_line_verdict.contains("CORRECT") && !last_line_verdict.contains("INCORRECT") {
-        true
-    } else if last_line_verdict.contains("INCORRECT") {
-        false
-    } else if upper.contains("CORRECT") && !upper.contains("INCORRECT") {
-        true
-    } else {
-        false
-    };
+    let correct =
+        if last_line_verdict.contains("CORRECT") && !last_line_verdict.contains("INCORRECT") {
+            true
+        } else if last_line_verdict.contains("INCORRECT") {
+            false
+        } else if upper.contains("CORRECT") && !upper.contains("INCORRECT") {
+            true
+        } else {
+            false
+        };
     Ok(JudgeVerdict {
         correct,
         raw_response: raw,
@@ -223,7 +224,11 @@ mod tests {
     fn parses_correct_verdict() {
         // unit test for the parsing logic only — no network.
         let raw = "The candidate gives the same answer as the reference.\n\nCORRECT".to_string();
-        assert!(raw.to_ascii_uppercase().lines().rev().any(|l| l.trim() == "CORRECT"));
+        assert!(raw
+            .to_ascii_uppercase()
+            .lines()
+            .rev()
+            .any(|l| l.trim() == "CORRECT"));
     }
 
     #[test]

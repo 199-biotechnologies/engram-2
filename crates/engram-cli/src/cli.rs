@@ -138,9 +138,13 @@ pub enum Command {
 
     /// Run a benchmark suite.
     Bench {
-        /// Benchmark name: mini | mini-fts | longmemeval | longmemeval-qa | locomo-qa
+        /// Benchmark name: mini | mini-fts | longmemeval | longmemeval-qa | locomo-qa | locomo-plus | mab
         #[arg(default_value = "mini")]
         suite: String,
+
+        /// MemoryAgentBench split: accurate_retrieval | test_time_learning | long_range_understanding | conflict_resolution.
+        #[arg(long, default_value = "accurate_retrieval")]
+        mab_split: String,
 
         /// Download dataset if missing.
         #[arg(long)]
@@ -192,10 +196,7 @@ pub enum ConfigCommand {
     /// Show effective configuration (keys masked).
     Show,
     /// Set a configuration key.
-    Set {
-        key: String,
-        value: String,
-    },
+    Set { key: String, value: String },
     /// Validate configured API keys.
     Check,
 }

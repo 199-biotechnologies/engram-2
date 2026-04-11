@@ -97,6 +97,18 @@ ls benchmarks/
 
 All runs log full per-question detail, token counts, model IDs, gold evidence retrieval metrics, and judge verdicts to [`benchmarks/`](benchmarks/) for audit.
 
+### Additional benchmarks (April 2026)
+
+| Suite | Status | Source | Notes |
+|---|---|---|---|
+| `locomo-plus` | wired | [xjtuleeyf/Locomo-Plus](https://github.com/xjtuleeyf/Locomo-Plus) | 401 cognitive cue/trigger pairs. SOTA: gemini-2.5-pro 26%. Binary judge. |
+| `mab` (`accurate_retrieval`) | wired | [HUST-AI-HYZ/MemoryAgentBench](https://github.com/HUST-AI-HYZ/MemoryAgentBench) | 22 rows, ~1500 retrieval questions. |
+| `mab` (`test_time_learning`) | wired | same | 6 rows, MCC + movie rec |
+| `mab` (`long_range_understanding`) | partial | same | LLM-judge for DetectiveQA only; ∞Bench-Sum F1 not yet implemented |
+| `mab` (`conflict_resolution`) | wired | same | Selective forgetting |
+
+Run any of them with `engram bench <suite> --limit N`. Datasets must be downloaded first (commands printed by the CLI on first run).
+
 ## Install
 
 ```bash
@@ -250,7 +262,7 @@ engram follows the **[agent-cli-framework](https://github.com/199-biotechnologie
 | `engram forget <id> --confirm` | Soft-delete (destructive, requires `--confirm`) |
 | `engram entities list \| show <name>` | Browse extracted entities |
 | `engram export` / `engram import <file>` | JSON backup / restore |
-| `engram bench <suite>` | Run benchmarks. Suites: `mini`, `mini-fts`, `longmemeval`, `longmemeval-qa`, `locomo-qa` |
+| `engram bench <suite>` | Run benchmarks. Suites: `mini`, `mini-fts`, `longmemeval`, `longmemeval-qa`, `locomo-qa`, `locomo-plus`, `mab` |
 | `engram config show \| set \| check` | Configuration |
 | `engram skill install \| uninstall` | Deploy agent skill signpost |
 | `engram agent-info` | Self-describing manifest (start here) |

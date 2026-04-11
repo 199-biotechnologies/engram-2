@@ -39,9 +39,7 @@ impl MabSplit {
             "accurate_retrieval" | "ar" => Some(Self::AccurateRetrieval),
             "test_time_learning" | "ttl" => Some(Self::TestTimeLearning),
             "long_range_understanding" | "lru" => Some(Self::LongRangeUnderstanding),
-            "conflict_resolution" | "sf" | "selective_forgetting" => {
-                Some(Self::ConflictResolution)
-            }
+            "conflict_resolution" | "sf" | "selective_forgetting" => Some(Self::ConflictResolution),
             _ => None,
         }
     }
@@ -162,13 +160,13 @@ where
         serde_json::Value::Null => None,
         serde_json::Value::Array(arr) => Some(arr.iter().map(value_to_string).collect()),
         serde_json::Value::String(s) if s.trim().is_empty() => None,
-        serde_json::Value::String(s) if s.trim_start().starts_with('[') => {
-            Some(serde_json::from_str::<Vec<serde_json::Value>>(&s)
+        serde_json::Value::String(s) if s.trim_start().starts_with('[') => Some(
+            serde_json::from_str::<Vec<serde_json::Value>>(&s)
                 .map_err(serde::de::Error::custom)?
                 .iter()
                 .map(value_to_string)
-                .collect())
-        }
+                .collect(),
+        ),
         other => Some(vec![value_to_string(&other)]),
     })
 }
@@ -194,16 +192,16 @@ where
     Ok(out)
 }
 
-fn deserialize_haystack_sessions_opt<'de, D>(
-    d: D,
-) -> Result<Option<Vec<MabHaystackTurn>>, D::Error>
+fn deserialize_haystack_sessions_opt<'de, D>(d: D) -> Result<Option<Vec<MabHaystackTurn>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let v = serde_json::Value::deserialize(d)?;
     match v {
         serde_json::Value::Null => Ok(None),
-        serde_json::Value::Array(_) => serde_json::from_value(v).map(Some).map_err(serde::de::Error::custom),
+        serde_json::Value::Array(_) => serde_json::from_value(v)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
         serde_json::Value::String(s) if s.trim().is_empty() => Ok(None),
         serde_json::Value::String(s) => serde_json::from_str::<Vec<MabHaystackTurn>>(&s)
             .map(Some)
@@ -266,6 +264,22 @@ mod tests {
                 .unwrap()
                 .content,
             "hello"
+        );
+    }
+
+    #[test]
+    fn parses_split_aliases() {
+        assert_eq!(
+            MabSplit::from_name("accurate_retrieval"),
+            Some(MabSplit::AccurateRetrieval)
+        );
+        assert_eq!(
+            MabSplit::from_name("long-range-understanding"),
+            Some(MabSplit::LongRangeUnderstanding)
+        );
+        assert_eq!(
+            MabSplit::from_name("sf"),
+            Some(MabSplit::ConflictResolution)
         );
     }
 }

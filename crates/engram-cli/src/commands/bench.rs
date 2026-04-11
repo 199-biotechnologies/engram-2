@@ -16,6 +16,7 @@ use serde_json::json;
 pub async fn run(
     ctx: &AppContext,
     suite: String,
+    mab_split: String,
     download: bool,
     limit: Option<usize>,
     answerer: String,
@@ -32,6 +33,12 @@ pub async fn run(
             run_longmemeval_qa(ctx, limit, answerer, judge, ragas, top_k, save).await
         }
         "locomo-qa" => run_locomo_qa(ctx, limit, answerer, judge, ragas, top_k, save).await,
+        "locomo-plus" | "locomo-plus-qa" => {
+            run_locomo_plus_qa(ctx, limit, answerer, judge, ragas, top_k, save).await
+        }
+        "memoryagentbench" | "mab" => {
+            run_memoryagentbench_qa(ctx, mab_split, limit, answerer, judge, top_k, save).await
+        }
         other => Err(CliError::BadInput(format!("unknown suite: {other}"))),
     }
 }
@@ -56,8 +63,8 @@ async fn run_mini(ctx: &AppContext) -> Result<(), CliError> {
 
     let report = match mode {
         "hybrid_gemini" => {
-            let embedder = GeminiEmbedder::from_env()
-                .map_err(|e| CliError::Config(format!("gemini: {e}")))?;
+            let embedder =
+                GeminiEmbedder::from_env().map_err(|e| CliError::Config(format!("gemini: {e}")))?;
             engram_bench::mini::run_hybrid_baseline(&embedder, rrf_k).await?
         }
         "hybrid_stub" => {
@@ -82,12 +89,9 @@ async fn run_mini(ctx: &AppContext) -> Result<(), CliError> {
         "questions_evaluated": m.questions_evaluated,
         "per_question": report.per_question,
     });
-    print_success(
-        ctx.format,
-        payload,
-        Metadata::default(),
-        |data| println!("{}", serde_json::to_string_pretty(data).unwrap()),
-    );
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
     Ok(())
 }
 
@@ -106,12 +110,9 @@ fn run_mini_fts(ctx: &AppContext) -> Result<(), CliError> {
         "questions_evaluated": m.questions_evaluated,
         "per_question": report.per_question,
     });
-    print_success(
-        ctx.format,
-        payload,
-        Metadata::default(),
-        |data| println!("{}", serde_json::to_string_pretty(data).unwrap()),
-    );
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
     Ok(())
 }
 
@@ -170,8 +171,7 @@ async fn run_longmemeval_qa(
     let benchmarks_dir = std::path::PathBuf::from("benchmarks");
     let _ = std::fs::create_dir_all(&benchmarks_dir);
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
-    let default_name = benchmarks_dir
-        .join(format!("longmemeval-qa-{}.json", timestamp));
+    let default_name = benchmarks_dir.join(format!("longmemeval-qa-{}.json", timestamp));
     let save_path = save.unwrap_or(default_name);
     let checkpoint_path = save_path.with_extension("checkpoint.jsonl");
 
@@ -234,12 +234,9 @@ async fn run_longmemeval_qa(
         "by_question_type": report.by_question_type,
         "saved_to": save_path.to_string_lossy(),
     });
-    print_success(
-        ctx.format,
-        payload,
-        Metadata::default(),
-        |data| println!("{}", serde_json::to_string_pretty(data).unwrap()),
-    );
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
     Ok(())
 }
 
@@ -311,10 +308,13 @@ async fn run_locomo_qa(
     //   - "zerank2" : local zerank-2 sidecar (best quality on biomed/STEM)
     //   - "cohere"  : Cohere rerank-v3.5 (default if COHERE_API_KEY set)
     //   - "none"    : passthrough (no rerank)
-    let provider = std::env::var("ENGRAM_RERANK_PROVIDER")
-        .unwrap_or_else(|_| {
-            if cohere_key.is_some() { "cohere".to_string() } else { "none".to_string() }
-        });
+    let provider = std::env::var("ENGRAM_RERANK_PROVIDER").unwrap_or_else(|_| {
+        if cohere_key.is_some() {
+            "cohere".to_string()
+        } else {
+            "none".to_string()
+        }
+    });
     let report = match provider.as_str() {
         "zerank2" | "zerank-2" | "zerank_local" | "local" => {
             let reranker = ZerankLocalReranker::new();
@@ -328,29 +328,51 @@ async fn run_locomo_qa(
                 ));
             }
             run_qa(
-                &dataset, &embedder, Some(&reranker), &answerer, &judge,
-                rrf_k, top_k, limit, ragas, Some(checkpoint_path.clone()),
+                &dataset,
+                &embedder,
+                Some(&reranker),
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                ragas,
+                Some(checkpoint_path.clone()),
             )
             .await?
         }
         "cohere" => {
             let cohere = cohere_key.ok_or_else(|| {
-                CliError::Config(
-                    "ENGRAM_RERANK_PROVIDER=cohere but COHERE_API_KEY not set".into(),
-                )
+                CliError::Config("ENGRAM_RERANK_PROVIDER=cohere but COHERE_API_KEY not set".into())
             })?;
             let reranker = CohereReranker::new(cohere);
             run_qa(
-                &dataset, &embedder, Some(&reranker), &answerer, &judge,
-                rrf_k, top_k, limit, ragas, Some(checkpoint_path.clone()),
+                &dataset,
+                &embedder,
+                Some(&reranker),
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                ragas,
+                Some(checkpoint_path.clone()),
             )
             .await?
         }
         "none" | "passthrough" | "off" => {
             let no_rerank: Option<&PassthroughReranker> = None;
             run_qa(
-                &dataset, &embedder, no_rerank, &answerer, &judge,
-                rrf_k, top_k, limit, ragas, Some(checkpoint_path.clone()),
+                &dataset,
+                &embedder,
+                no_rerank,
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                ragas,
+                Some(checkpoint_path.clone()),
             )
             .await?
         }
@@ -385,12 +407,349 @@ async fn run_locomo_qa(
         "by_category": report.by_question_type,
         "saved_to": save_path.to_string_lossy(),
     });
-    print_success(
-        ctx.format,
-        payload,
-        Metadata::default(),
-        |data| println!("{}", serde_json::to_string_pretty(data).unwrap()),
-    );
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_locomo_plus_qa(
+    ctx: &AppContext,
+    limit: Option<usize>,
+    answerer_model: String,
+    judge_model: String,
+    ragas: bool,
+    top_k: usize,
+    save: Option<std::path::PathBuf>,
+) -> Result<(), CliError> {
+    use engram_bench::locomo::{default_path as locomo_default_path, LocomoDataset};
+    use engram_bench::locomo_plus::{default_path as locomo_plus_default_path, LocomoPlusDataset};
+    use engram_bench::qa::run_locomo_plus_qa as run_qa;
+    use engram_rerank::cohere::CohereReranker;
+    use engram_rerank::passthrough::PassthroughReranker;
+    use engram_rerank::zerank_local::ZerankLocalReranker;
+
+    let plus_path = locomo_plus_default_path();
+    if !plus_path.exists() {
+        return Err(CliError::Config(format!(
+            "LoCoMo-Plus not found at {}. Download with:\nmkdir -p data/locomo_plus && curl -sL 'https://raw.githubusercontent.com/xjtuleeyf/Locomo-Plus/main/data/locomo_plus.json' -o data/locomo_plus/locomo_plus.json",
+            plus_path.display()
+        )));
+    }
+    let locomo_path = locomo_default_path();
+    if !locomo_path.exists() {
+        return Err(CliError::Config(format!(
+            "LoCoMo not found at {}. Download with: mkdir -p data/locomo && \
+             curl -sL 'https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json' \
+             -o {}",
+            locomo_path.display(),
+            locomo_path.display()
+        )));
+    }
+    let plus = LocomoPlusDataset::load_from_file(&plus_path)?;
+    let locomo = LocomoDataset::load_from_file(&locomo_path)?;
+
+    let rrf_k: f32 = std::env::var("ENGRAM_RRF_K")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60.0);
+    let gemini_key = crate::commands::config::resolve_secret("GEMINI_API_KEY", "keys.gemini")
+        .ok_or_else(|| CliError::Config("GEMINI_API_KEY not set — required for QA bench".into()))?;
+    let cohere_key = crate::commands::config::resolve_secret("COHERE_API_KEY", "keys.cohere");
+    let openrouter_key =
+        crate::commands::config::resolve_secret("OPENROUTER_API_KEY", "keys.openrouter")
+            .ok_or_else(|| {
+                CliError::Config(
+                    "OPENROUTER_API_KEY not set — required for LLM answerer + judge".into(),
+                )
+            })?;
+
+    let mut embedder = GeminiEmbedder::new(gemini_key);
+    if let Ok(model) = std::env::var("GEMINI_EMBED_MODEL") {
+        embedder = embedder.with_model(model);
+    }
+    let answerer = OpenRouterClient::new(openrouter_key.clone()).with_model(answerer_model.clone());
+    let judge = OpenRouterClient::new(openrouter_key).with_model(judge_model.clone());
+
+    let benchmarks_dir = std::path::PathBuf::from("benchmarks");
+    let _ = std::fs::create_dir_all(&benchmarks_dir);
+    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
+    let default_name = benchmarks_dir.join(format!("locomo-plus-qa-{}.json", timestamp));
+    let save_path = save.unwrap_or(default_name);
+    let checkpoint_path = save_path.with_extension("checkpoint.jsonl");
+
+    let provider = std::env::var("ENGRAM_RERANK_PROVIDER").unwrap_or_else(|_| {
+        if cohere_key.is_some() {
+            "cohere".to_string()
+        } else {
+            "none".to_string()
+        }
+    });
+    let report = match provider.as_str() {
+        "zerank2" | "zerank-2" | "zerank_local" | "local" => {
+            let reranker = ZerankLocalReranker::new();
+            if !reranker.health_check().await.unwrap_or(false) {
+                return Err(CliError::Config(
+                    "ENGRAM_RERANK_PROVIDER=zerank2 but the sidecar is not reachable. \
+                     Start it with: uv run --with sentence-transformers --with torch \
+                     crates/engram-rerank/python/zerank_server.py"
+                        .into(),
+                ));
+            }
+            run_qa(
+                &plus,
+                &locomo,
+                &embedder,
+                Some(&reranker),
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                ragas,
+                Some(checkpoint_path.clone()),
+            )
+            .await?
+        }
+        "cohere" => {
+            let cohere = cohere_key.ok_or_else(|| {
+                CliError::Config("ENGRAM_RERANK_PROVIDER=cohere but COHERE_API_KEY not set".into())
+            })?;
+            let reranker = CohereReranker::new(cohere);
+            run_qa(
+                &plus,
+                &locomo,
+                &embedder,
+                Some(&reranker),
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                ragas,
+                Some(checkpoint_path.clone()),
+            )
+            .await?
+        }
+        "none" | "passthrough" | "off" => {
+            let no_rerank: Option<&PassthroughReranker> = None;
+            run_qa(
+                &plus,
+                &locomo,
+                &embedder,
+                no_rerank,
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                ragas,
+                Some(checkpoint_path.clone()),
+            )
+            .await?
+        }
+        other => {
+            return Err(CliError::BadInput(format!(
+                "unknown ENGRAM_RERANK_PROVIDER={other} (expected: zerank2 | cohere | none)"
+            )));
+        }
+    };
+
+    if let Some(parent) = save_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&save_path, serde_json::to_string_pretty(&report)?)?;
+
+    let payload = json!({
+        "suite": "locomo-plus",
+        "questions_evaluated": report.questions_evaluated,
+        "accuracy": report.accuracy,
+        "correct": report.correct_count,
+        "recall_at_5": report.recall_at_5,
+        "mrr": report.mrr,
+        "ragas": report.ragas,
+        "mean_latency_ms": report.mean_latency_ms,
+        "p50_latency_ms": report.p50_latency_ms,
+        "p95_latency_ms": report.p95_latency_ms,
+        "answerer_model": answerer_model,
+        "judge_model": judge_model,
+        "answerer_prompt_tokens": report.answerer_total_prompt_tokens,
+        "answerer_completion_tokens": report.answerer_total_completion_tokens,
+        "judge_prompt_tokens": report.judge_total_prompt_tokens,
+        "judge_completion_tokens": report.judge_total_completion_tokens,
+        "by_relation_type": report.by_question_type,
+        "saved_to": save_path.to_string_lossy(),
+    });
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_memoryagentbench_qa(
+    ctx: &AppContext,
+    split_name: String,
+    limit: Option<usize>,
+    answerer_model: String,
+    judge_model: String,
+    top_k: usize,
+    save: Option<std::path::PathBuf>,
+) -> Result<(), CliError> {
+    use engram_bench::memoryagentbench::{default_dir, MabDataset, MabSplit};
+    use engram_bench::qa::run_memoryagentbench_qa as run_qa;
+    use engram_rerank::cohere::CohereReranker;
+    use engram_rerank::passthrough::PassthroughReranker;
+    use engram_rerank::zerank_local::ZerankLocalReranker;
+
+    let split = MabSplit::from_name(&split_name).ok_or_else(|| {
+        CliError::BadInput(format!(
+            "unknown --mab-split {split_name} (expected: accurate_retrieval | test_time_learning | long_range_understanding | conflict_resolution)"
+        ))
+    })?;
+    let path = default_dir().join(format!("{}.jsonl", split.name()));
+    if !path.exists() {
+        return Err(CliError::Config(format!(
+            "MemoryAgentBench split not found at {}. Download with:\nuv run --with huggingface_hub --with pyarrow scripts/download_memoryagentbench.py",
+            path.display()
+        )));
+    }
+    let dataset = MabDataset::load_jsonl(&path, split)?;
+
+    let rrf_k: f32 = std::env::var("ENGRAM_RRF_K")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60.0);
+    let gemini_key = crate::commands::config::resolve_secret("GEMINI_API_KEY", "keys.gemini")
+        .ok_or_else(|| CliError::Config("GEMINI_API_KEY not set — required for QA bench".into()))?;
+    let cohere_key = crate::commands::config::resolve_secret("COHERE_API_KEY", "keys.cohere");
+    let openrouter_key =
+        crate::commands::config::resolve_secret("OPENROUTER_API_KEY", "keys.openrouter")
+            .ok_or_else(|| {
+                CliError::Config(
+                    "OPENROUTER_API_KEY not set — required for LLM answerer + judge".into(),
+                )
+            })?;
+
+    let mut embedder = GeminiEmbedder::new(gemini_key);
+    if let Ok(model) = std::env::var("GEMINI_EMBED_MODEL") {
+        embedder = embedder.with_model(model);
+    }
+    let answerer = OpenRouterClient::new(openrouter_key.clone()).with_model(answerer_model.clone());
+    let judge = OpenRouterClient::new(openrouter_key).with_model(judge_model.clone());
+
+    let benchmarks_dir = std::path::PathBuf::from("benchmarks");
+    let _ = std::fs::create_dir_all(&benchmarks_dir);
+    let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%S");
+    let default_name = benchmarks_dir.join(format!(
+        "memoryagentbench-{}-{}.json",
+        split.name().to_ascii_lowercase(),
+        timestamp
+    ));
+    let save_path = save.unwrap_or(default_name);
+    let checkpoint_path = save_path.with_extension("checkpoint.jsonl");
+
+    let provider = std::env::var("ENGRAM_RERANK_PROVIDER").unwrap_or_else(|_| {
+        if cohere_key.is_some() {
+            "cohere".to_string()
+        } else {
+            "none".to_string()
+        }
+    });
+    let report = match provider.as_str() {
+        "zerank2" | "zerank-2" | "zerank_local" | "local" => {
+            let reranker = ZerankLocalReranker::new();
+            if !reranker.health_check().await.unwrap_or(false) {
+                return Err(CliError::Config(
+                    "ENGRAM_RERANK_PROVIDER=zerank2 but the sidecar is not reachable. \
+                     Start it with: uv run --with sentence-transformers --with torch \
+                     crates/engram-rerank/python/zerank_server.py"
+                        .into(),
+                ));
+            }
+            run_qa(
+                &dataset,
+                &embedder,
+                Some(&reranker),
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                Some(checkpoint_path.clone()),
+            )
+            .await?
+        }
+        "cohere" => {
+            let cohere = cohere_key.ok_or_else(|| {
+                CliError::Config("ENGRAM_RERANK_PROVIDER=cohere but COHERE_API_KEY not set".into())
+            })?;
+            let reranker = CohereReranker::new(cohere);
+            run_qa(
+                &dataset,
+                &embedder,
+                Some(&reranker),
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                Some(checkpoint_path.clone()),
+            )
+            .await?
+        }
+        "none" | "passthrough" | "off" => {
+            let no_rerank: Option<&PassthroughReranker> = None;
+            run_qa(
+                &dataset,
+                &embedder,
+                no_rerank,
+                &answerer,
+                &judge,
+                rrf_k,
+                top_k,
+                limit,
+                Some(checkpoint_path.clone()),
+            )
+            .await?
+        }
+        other => {
+            return Err(CliError::BadInput(format!(
+                "unknown ENGRAM_RERANK_PROVIDER={other} (expected: zerank2 | cohere | none)"
+            )));
+        }
+    };
+
+    if let Some(parent) = save_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(&save_path, serde_json::to_string_pretty(&report)?)?;
+
+    let payload = json!({
+        "suite": "memoryagentbench",
+        "split": split.name(),
+        "questions_evaluated": report.questions_evaluated,
+        "unscored_count": report.unscored_count,
+        "accuracy": report.accuracy,
+        "correct": report.correct_count,
+        "mean_latency_ms": report.mean_latency_ms,
+        "p50_latency_ms": report.p50_latency_ms,
+        "p95_latency_ms": report.p95_latency_ms,
+        "answerer_model": answerer_model,
+        "judge_model": judge_model,
+        "answerer_prompt_tokens": report.answerer_total_prompt_tokens,
+        "answerer_completion_tokens": report.answerer_total_completion_tokens,
+        "judge_prompt_tokens": report.judge_total_prompt_tokens,
+        "judge_completion_tokens": report.judge_total_completion_tokens,
+        "by_question_type": report.by_question_type,
+        "by_source": report.by_source,
+        "notes": report.notes,
+        "saved_to": save_path.to_string_lossy(),
+    });
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
     Ok(())
 }
 
@@ -467,11 +826,8 @@ async fn run_longmemeval(
         "r10_correct": report.r10_count,
         "limit": limit,
     });
-    print_success(
-        ctx.format,
-        payload,
-        Metadata::default(),
-        |data| println!("{}", serde_json::to_string_pretty(data).unwrap()),
-    );
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
     Ok(())
 }

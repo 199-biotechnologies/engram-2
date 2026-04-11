@@ -125,9 +125,16 @@ pub fn build_stitched_dialogue(
         .and_then(|v| v.as_str())
         .unwrap_or("B");
 
-    let cue_turns = map_dialogue(&parse_ab_dialogue(&plus_entry.cue_dialogue), speaker_a, speaker_b);
-    let trigger_turns =
-        map_dialogue(&parse_ab_dialogue(&plus_entry.trigger_query), speaker_a, speaker_b);
+    let cue_turns = map_dialogue(
+        &parse_ab_dialogue(&plus_entry.cue_dialogue),
+        speaker_a,
+        speaker_b,
+    );
+    let trigger_turns = map_dialogue(
+        &parse_ab_dialogue(&plus_entry.trigger_query),
+        speaker_a,
+        speaker_b,
+    );
     let evidence_text = dialogue_to_text(&cue_turns);
     let trigger = dialogue_to_text(&trigger_turns);
     let cue_id = cue_session_id(plus_entry);
@@ -221,11 +228,19 @@ pub fn build_stitched_dialogue(
     }
 }
 
-fn map_dialogue(turns: &[(char, String)], speaker_a: &str, speaker_b: &str) -> Vec<(String, String)> {
+fn map_dialogue(
+    turns: &[(char, String)],
+    speaker_a: &str,
+    speaker_b: &str,
+) -> Vec<(String, String)> {
     turns
         .iter()
         .map(|(speaker, text)| {
-            let mapped = if *speaker == 'A' { speaker_a } else { speaker_b };
+            let mapped = if *speaker == 'A' {
+                speaker_a
+            } else {
+                speaker_b
+            };
             (mapped.to_string(), text.clone())
         })
         .collect()
@@ -313,10 +328,8 @@ mod tests {
 
     #[test]
     fn loads_embedded_json_schema() {
-        let path = std::env::temp_dir().join(format!(
-            "locomo_plus_test_{}.json",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("locomo_plus_test_{}.json", std::process::id()));
         std::fs::write(
             &path,
             r#"[{

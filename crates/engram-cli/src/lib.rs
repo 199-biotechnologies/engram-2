@@ -17,29 +17,44 @@ pub async fn dispatch(cli: Cli) -> Result<(), CliError> {
 
     match cli.command {
         Command::AgentInfo => agent_info::run(&ctx),
-        Command::Remember { content, importance, tag, diary, no_facts } => {
-            commands::remember::run(&ctx, content, importance, tag, diary, no_facts).await
-        }
-        Command::Recall { query, top_k, layer, diary, since, until } => {
-            commands::recall::run(&ctx, query, top_k, layer, diary, since, until).await
-        }
+        Command::Remember {
+            content,
+            importance,
+            tag,
+            diary,
+            no_facts,
+        } => commands::remember::run(&ctx, content, importance, tag, diary, no_facts).await,
+        Command::Recall {
+            query,
+            top_k,
+            layer,
+            diary,
+            since,
+            until,
+        } => commands::recall::run(&ctx, query, top_k, layer, diary, since, until).await,
         Command::Ingest { path, mode, diary } => {
             commands::ingest::run(&ctx, path, mode, diary).await
         }
         Command::Forget { id, confirm } => commands::forget::run(&ctx, id, confirm),
-        Command::Edit { id, content, importance } => {
-            commands::edit::run(&ctx, id, content, importance).await
-        }
+        Command::Edit {
+            id,
+            content,
+            importance,
+        } => commands::edit::run(&ctx, id, content, importance).await,
         Command::Entities(sub) => match sub {
-            EntitiesCommand::List { limit, min_mentions } => {
-                commands::entities::list(&ctx, limit, min_mentions)
-            }
+            EntitiesCommand::List {
+                limit,
+                min_mentions,
+            } => commands::entities::list(&ctx, limit, min_mentions),
             EntitiesCommand::Show { name } => commands::entities::show(&ctx, name),
         },
         Command::Facts(sub) => match sub {
-            FactsCommand::List { subject, diary, all, limit } => {
-                commands::facts::list(&ctx, subject, diary, all, limit)
-            }
+            FactsCommand::List {
+                subject,
+                diary,
+                all,
+                limit,
+            } => commands::facts::list(&ctx, subject, diary, all, limit),
             FactsCommand::Show { subject, diary } => commands::facts::show(&ctx, subject, diary),
             FactsCommand::Conflicts { limit } => commands::facts::conflicts(&ctx, limit),
         },
@@ -47,6 +62,7 @@ pub async fn dispatch(cli: Cli) -> Result<(), CliError> {
         Command::Import { file } => commands::import::run(&ctx, file),
         Command::Bench {
             suite,
+            mab_split,
             download,
             limit,
             answerer,
@@ -56,7 +72,7 @@ pub async fn dispatch(cli: Cli) -> Result<(), CliError> {
             save,
         } => {
             commands::bench::run(
-                &ctx, suite, download, limit, answerer, judge, ragas, top_k, save,
+                &ctx, suite, mab_split, download, limit, answerer, judge, ragas, top_k, save,
             )
             .await
         }
