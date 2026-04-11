@@ -95,6 +95,126 @@ pub async fn judge_answer<J: ChatLlm + ?Sized>(
     })
 }
 
+const COGNITIVE_JUDGE_SYSTEM: &str = r#"You are a Memory Awareness Judge.
+Your task: Judge whether the Model Prediction considers or is linked to the Evidence. If there is a clear connection, the answer is correct (score 1); if not, it is wrong (no score).
+
+Labels:
+- "correct": The prediction explicitly or implicitly reflects/uses the evidence (memory or constraint). Give 1 point.
+- "wrong": The prediction does not show such a link to the evidence. No point.
+
+Memory/Evidence:
+{evidence}
+
+Model Prediction:
+{pred}
+
+Return your judgment strictly in JSON format:
+{"label": "correct"|"wrong", "reason": "<Does the prediction relate to the evidence?>"}"#;
+
+#[derive(serde::Deserialize)]
+struct CognitiveJudgeJson {
+    label: String,
+    #[serde(default, rename = "reason")]
+    _reason: Option<String>,
+}
+
+fn parse_cognitive_correct(raw: &str) -> bool {
+    if let Ok(parsed) = serde_json::from_str::<CognitiveJudgeJson>(raw.trim()) {
+        return parsed.label.eq_ignore_ascii_case("correct");
+    }
+
+    let lower = raw.to_ascii_lowercase();
+    let correct_pos = lower.find("correct");
+    let wrong_pos = lower.find("wrong");
+    match (correct_pos, wrong_pos) {
+        (Some(c), Some(w)) => c < w,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+pub async fn judge_answer_cognitive<J: ChatLlm + ?Sized>(
+    judge: &J,
+    evidence: &str,
+    candidate: &str,
+) -> Result<JudgeVerdict, engram_llm::LlmError> {
+    let prompt = COGNITIVE_JUDGE_SYSTEM
+        .replace("{evidence}", evidence.trim())
+        .replace("{pred}", candidate.trim());
+    let messages = vec![ChatMessage::system(prompt)];
+    let resp = judge.chat(&messages).await?;
+    let raw = resp.content.clone();
+    let correct = parse_cognitive_correct(&raw);
+    Ok(JudgeVerdict {
+        correct,
+        raw_response: raw,
+        prompt_tokens: resp.prompt_tokens,
+        completion_tokens: resp.completion_tokens,
+    })
+}
+
+const MAB_STANDARD_JUDGE_SYSTEM: &str = "I will give you a question, a correct answer, and a model-generated answer. Please answer yes if the model-generated answer contains the correct answer. Otherwise, answer no. If the model response is something like 'cannot answer' or 'I don't know', or refuses to answer, please answer no. If the model-generated answer is correct but is just rephrased or has more details, please answer yes. If the model-generated answer only contains a subset of the information required by the answer, please answer no.";
+
+const MAB_TEMPORAL_JUDGE_SYSTEM: &str = "I will give you a question, a correct answer, and a model-generated answer. Please answer yes if the model-generated answer contains the correct answer. Otherwise, answer no. If the model response is something like 'cannot answer' or 'I don't know', or refuses to answer, please answer no. If the model-generated answer is correct but is just rephrased or has more details, please answer yes. If the model-generated answer only contains a subset of the information required by the answer, please answer no. If the model's response is sufficient to answer the question, please answer yes. Please do not penalize off-by-one errors for the number of days when judging temporal questions.";
+
+const MAB_KNOWLEDGE_UPDATE_JUDGE_SYSTEM: &str = "I will give you a question, a correct answer, and a model-generated answer. Please answer yes if the model-generated answer contains the correct answer. Otherwise, answer no. If the model response is something like 'cannot answer' or 'I don't know', or refuses to answer, please answer no. If the model-generated answer is correct but is just rephrased or has more details, please answer yes. If the model-generated answer only contains a subset of the information required by the answer, please answer no. Note that the answer might involve multiple updates to the same fact over time, and we are looking for the latest update. If the model-generated response contains some previous information about the fact along with an updated answer, the response should be considered as correct as long as the updated answer is the required answer.";
+
+const MAB_PREFERENCE_JUDGE_SYSTEM: &str = "I will give you a question, a rubric for desired personalized response, and a model's response. Please answer yes if the model's response is consistent with the desired response. Please answer no otherwise.";
+
+const MAB_ABSTENTION_JUDGE_SYSTEM: &str = "I will give you an unanswerable question, an explanation, and a model-generated answer. Please answer yes if model-generated answer indicates that the question is unanswerable. Please answer no otherwise.";
+
+fn mab_prompt_for_question_type(question_type: &str) -> &'static str {
+    match question_type {
+        "factual" | "list" | "single_session_user" | "single_session_assistant" => {
+            MAB_STANDARD_JUDGE_SYSTEM
+        }
+        "temporal" | "temporal_reasoning" => MAB_TEMPORAL_JUDGE_SYSTEM,
+        "knowledge_update" => MAB_KNOWLEDGE_UPDATE_JUDGE_SYSTEM,
+        "preference" => MAB_PREFERENCE_JUDGE_SYSTEM,
+        "abstention" => MAB_ABSTENTION_JUDGE_SYSTEM,
+        _ => MAB_STANDARD_JUDGE_SYSTEM,
+    }
+}
+
+fn build_mab_judge_user(question: &str, answers: &[String], candidate: &str) -> String {
+    format!(
+        "Question: {}\nCorrect answer: {}\nModel response: {}\nIs the model response correct? Answer yes or no only.",
+        question.trim(),
+        answers.join(" OR "),
+        candidate.trim()
+    )
+}
+
+fn parse_mab_correct(raw: &str) -> bool {
+    raw.to_ascii_lowercase()
+        .chars()
+        .take(10)
+        .collect::<String>()
+        .contains("yes")
+}
+
+pub async fn judge_answer_mab<J: ChatLlm + ?Sized>(
+    judge: &J,
+    question: &str,
+    answers: &[String],
+    candidate: &str,
+    question_type: &str,
+) -> Result<JudgeVerdict, engram_llm::LlmError> {
+    let messages = vec![
+        ChatMessage::system(mab_prompt_for_question_type(question_type)),
+        ChatMessage::user(build_mab_judge_user(question, answers, candidate)),
+    ];
+    let resp = judge.chat(&messages).await?;
+    let raw = resp.content.clone();
+    let correct = parse_mab_correct(&raw);
+    Ok(JudgeVerdict {
+        correct,
+        raw_response: raw,
+        prompt_tokens: resp.prompt_tokens,
+        completion_tokens: resp.completion_tokens,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +224,27 @@ mod tests {
         // unit test for the parsing logic only — no network.
         let raw = "The candidate gives the same answer as the reference.\n\nCORRECT".to_string();
         assert!(raw.to_ascii_uppercase().lines().rev().any(|l| l.trim() == "CORRECT"));
+    }
+
+    #[test]
+    fn parses_cognitive_correct_verdict() {
+        let raw = r#"{"label":"correct","reason":"uses the evidence"}"#;
+        assert!(parse_cognitive_correct(raw));
+    }
+
+    #[test]
+    fn parses_cognitive_wrong_verdict() {
+        let raw = r#"{"label":"wrong","reason":"unrelated"}"#;
+        assert!(!parse_cognitive_correct(raw));
+    }
+
+    #[test]
+    fn parses_mab_yes_verdict() {
+        assert!(parse_mab_correct("Yes, it matches."));
+    }
+
+    #[test]
+    fn parses_mab_no_verdict() {
+        assert!(!parse_mab_correct("No, it misses the answer."));
     }
 }

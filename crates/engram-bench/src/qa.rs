@@ -10,7 +10,7 @@
 //! actually answers correctly using the retrieved context.
 
 use crate::error::BenchError;
-use crate::judge::{judge_answer, JudgeVerdict};
+use crate::judge::{judge_answer, judge_answer_cognitive, judge_answer_mab, JudgeVerdict};
 use crate::longmemeval::{LongMemEvalDataset, LongMemEvalQuestion};
 use crate::metrics::{recall_at_k, reciprocal_rank};
 use crate::ragas::{compute_all, RagasMetrics};
@@ -63,6 +63,9 @@ pub struct QaReport {
     pub judge_total_completion_tokens: u64,
     pub per_question: Vec<QaRunResult>,
     pub by_question_type: HashMap<String, QaTypeStats>,
+    pub by_source: HashMap<String, QaTypeStats>,
+    pub unscored_count: usize,
+    pub notes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -528,6 +531,9 @@ where
         judge_total_completion_tokens: judge_completion_tokens,
         per_question: results,
         by_question_type: by_type,
+        by_source: HashMap::new(),
+        unscored_count: 0,
+        notes: Vec::new(),
     })
 }
 
@@ -971,5 +977,8 @@ where
         judge_total_completion_tokens: judge_completion_tokens,
         per_question: results,
         by_question_type: by_type,
+        by_source: HashMap::new(),
+        unscored_count: 0,
+        notes: Vec::new(),
     })
 }
