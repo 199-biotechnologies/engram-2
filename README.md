@@ -9,7 +9,7 @@
 [![tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)](crates/engram-cli/tests/cli.rs)
 
 ```bash
-git clone https://github.com/199-biotechnologies/engram-2
+git clone https://github.com/paperfoot/engram-cli
 cd engram-2
 cargo install --path crates/engram-cli --locked
 engram skill install          # tells Claude/Codex/Gemini it exists
@@ -113,7 +113,7 @@ Run any of them with `engram bench <suite> --limit N`. Datasets must be download
 
 ```bash
 # Prerequisite: Rust 1.80+ (install via rustup.rs if needed)
-git clone https://github.com/199-biotechnologies/engram-2
+git clone https://github.com/paperfoot/engram-cli
 cd engram-2
 cargo install --path crates/engram-cli --locked
 ```
@@ -241,7 +241,7 @@ Cargo workspace layout:
 
 ## Framework compliance
 
-engram follows the **[agent-cli-framework](https://github.com/199-biotechnologies/agent-cli-framework)** verbatim:
+engram follows the **[agent-cli-framework](https://github.com/paperfoot/agent-cli-framework)** verbatim:
 
 - `agent-info` returns a raw JSON manifest (not enveloped) so agents can discover every command in one call
 - JSON envelope on every other stdout path (`version`, `status`, `data`, `metadata`)
@@ -307,7 +307,7 @@ Research direction for contributors: [`program.md`](program.md). Design rational
 - **[LongMemEval](https://github.com/xiaowu0162/LongMemEval)** — the retrieval benchmark
 - **[LoCoMo](https://snap-research.github.io/locomo/)** — the conversational QA benchmark
 - **[jina-reranker-v3](https://huggingface.co/jinaai/jina-reranker-v3)** — local 0.6B listwise reranker
-- **[agent-cli-framework](https://github.com/199-biotechnologies/agent-cli-framework)** — the principles engram follows
+- **[agent-cli-framework](https://github.com/paperfoot/agent-cli-framework)** — the principles engram follows
 
 ## License
 

@@ -14,7 +14,7 @@ pub fn run(_ctx: &AppContext) -> Result<(), CliError> {
         "name": "engram",
         "version": env!("CARGO_PKG_VERSION"),
         "description": "Agent-native memory engine for scientific knowledge and personal memory.",
-        "homepage": "https://github.com/199-biotechnologies/engram-2",
+        "homepage": "https://github.com/paperfoot/engram-cli",
         "summary_for_agents": [
             "engram is a local-first knowledge engine. Use `remember` to store, `recall` to retrieve.",
             "Pipe stdout to jq — output is always JSON when piped or with --json.",
@@ -82,7 +82,7 @@ pub fn run(_ctx: &AppContext) -> Result<(), CliError> {
                 "engram_v2_R@10": 0.998
             }
         },
-        "framework": "https://github.com/199-biotechnologies/agent-cli-framework"
+        "framework": "https://github.com/paperfoot/agent-cli-framework"
     });
 
     // Raw JSON — NOT wrapped in envelope. Framework principle #1.

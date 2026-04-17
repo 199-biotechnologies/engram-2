@@ -177,7 +177,7 @@ impl OpenRouterClient {
             .client
             .post(ENDPOINT)
             .bearer_auth(&self.api_key)
-            .header("HTTP-Referer", "https://github.com/199-biotechnologies/engram-2")
+            .header("HTTP-Referer", "https://github.com/paperfoot/engram-cli")
             .header("X-Title", "engram v2 benchmark")
             .json(body)
             .send()
