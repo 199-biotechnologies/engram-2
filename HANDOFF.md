@@ -96,22 +96,21 @@ Cohere on the full 500 it's expected to land around R@1 ~0.95.**
 
 1. **GitHub Actions CI** — build release binaries for mac/linux on tag push.
    Repo exists, just needs `.github/workflows/release.yml`.
-2. **crates.io publish** — `cargo publish` the `paperfoot-engram-*`
-   library crates, then `paperfoot-engram` for the CLI. This unblocks
-   `cargo install paperfoot-engram` without cloning. The package names use
-   the `paperfoot-` prefix because `engram-cli` and some `engram-*` names
-   already exist on crates.io under other owners.
-3. **Homebrew tap/formula** — publish `paperfoot/tap/engram` or equivalent
-   after release artifacts exist. Do not advertise `brew install` as live yet.
-4. **Real `engram update` implementation** — currently a stub. Trivial once
+2. **Real `engram update` implementation** — currently a stub. Trivial once
    GitHub Releases has artifacts.
-5. **`ENGRAM_RERANK_TOP_N` env var** — cuts Cohere cost 60% by reranking
+3. **`ENGRAM_RERANK_TOP_N` env var** — cuts Cohere cost 60% by reranking
    top-20 instead of top-50. Code change in one place in `retrieval.rs`.
-6. **Local embedding fallback** — candle + bge-small-en-v1.5 so recall
+4. **Local embedding fallback** — candle + bge-small-en-v1.5 so recall
    works with zero API and p95 latency drops from ~500ms to ~10ms.
-7. **Real full-500 Cohere measurement** — I killed the stalled run; the
+5. **Real full-500 Cohere measurement** — I killed the stalled run; the
    foreground limit=100 gave R@1=0.93, but the full 500 number would
    make the headline claim concrete. ~$5 at current Cohere rates.
+
+## Release channels
+
+- crates.io is live as `paperfoot-engram` plus internal `paperfoot-engram-*` crates.
+- Homebrew is live as `brew install paperfoot/tap/engram`.
+- Source install remains `cargo install --path crates/engram-cli --locked`.
 
 ## Agent skill surfaces
 

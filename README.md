@@ -141,23 +141,20 @@ One binary at `~/.cargo/bin/engram`. No runtime, no Python, no Docker, no servic
 
 ### Package manager status
 
-The live install path today is source install from this repository:
+Live install paths:
+
+```bash
+cargo install paperfoot-engram --locked
+brew install paperfoot/tap/engram
+```
+
+Source install from this repository also works:
 
 ```bash
 cargo install --path crates/engram-cli --locked
 ```
 
-The release-facing commands are intentionally documented as **not live until release automation exists**:
-
-```bash
-# After crates.io publish:
-cargo install paperfoot-engram --locked
-
-# After Homebrew tap/formula publish:
-brew install paperfoot/tap/engram
-```
-
-`engram update` is still a structured stub until GitHub Releases publish signed/prebuilt artifacts. The crates.io package name is `paperfoot-engram` because `engram-cli` is already owned by another project on crates.io. The handoff tracks Homebrew and release binaries as packaging work, not current guarantees.
+`engram update` is still a structured stub until GitHub Releases publish signed/prebuilt artifacts. The crates.io package name is `paperfoot-engram` because `engram-cli` is already owned by another project on crates.io.
 
 ### Configure keys
 
@@ -449,7 +446,6 @@ Research direction for contributors: [`program.md`](program.md). Design rational
 - Strict benchmark suite: buried-needle, multi-hop, temporal reasoning, adversarial, and attribution tests
 - Contradiction detection and resolution (temporal validity windows + provenance)
 - GitHub Actions CI releasing prebuilt macOS + Linux binaries
-- `cargo install paperfoot-engram` from crates.io
 - Local embedding fallback via `candle` + `bge-small-en-v1.5` (zero API, p95 < 10 ms)
 
 ## Credits
