@@ -323,7 +323,8 @@ mod tests {
 
     #[test]
     fn parses_escaped_newlines_in_dialogue() {
-        let raw = r#"A: After learning to say 'no', I've felt less stressed.\nB: That's great to hear!"#;
+        let raw =
+            r#"A: After learning to say 'no', I've felt less stressed.\nB: That's great to hear!"#;
         let turns = parse_ab_dialogue(raw);
         assert_eq!(turns.len(), 2);
         assert_eq!(turns[0].0, 'A');

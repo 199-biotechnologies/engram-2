@@ -7,4 +7,7 @@ pub mod paths;
 pub mod sqlite;
 
 pub use error::StorageError;
-pub use sqlite::SqliteStore;
+pub use sqlite::{
+    ChunkRecord, ClaimRecord, DocumentRecord, EntityRecord, KnowledgeBase, RelationRecord,
+    SourceCitation, SqliteStore, StoredChunkEmbedding, WikiPageRecord,
+};

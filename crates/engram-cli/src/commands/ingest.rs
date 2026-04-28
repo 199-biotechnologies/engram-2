@@ -1,5 +1,6 @@
 //! `engram ingest <path>` — mine files or directories into memories.
 
+use crate::commands::usage::gemini_embed_cost_usd;
 use crate::context::AppContext;
 use crate::error::CliError;
 use crate::output::{print_success, Metadata};
@@ -21,6 +22,8 @@ pub async fn run(
     path: PathBuf,
     mode: String,
     diary: String,
+    kb: String,
+    compile: String,
 ) -> Result<(), CliError> {
     if !path.exists() {
         return Err(CliError::BadInput(format!(
@@ -40,14 +43,20 @@ pub async fn run(
     let mut memories_created = 0u32;
     let mut chunks_created = 0u32;
     // Cost accounting for Gemini embeddings: ~4 chars per token heuristic,
-    // $0.15 per 1M input tokens for gemini-embedding-2-preview (priced 2026-04).
+    // $0.15 per 1M input tokens for gemini-embedding-2 (priced 2026-04).
     let mut total_embedded_chars: usize = 0;
 
     // Embedder: env var → config file → stub fallback
     let force_stub = std::env::var("ENGRAM_BENCH_FORCE_STUB").is_ok();
     let gemini_key = crate::commands::config::resolve_secret("GEMINI_API_KEY", "keys.gemini");
     let have_gemini = gemini_key.is_some() && !force_stub;
-    let model_name = if have_gemini { "gemini" } else { "stub" };
+    let (model_name, dims, prompt_format) = if have_gemini {
+        let e = GeminiEmbedder::new(gemini_key.clone().unwrap());
+        (e.model(), e.dimensions(), e.prompt_format().to_string())
+    } else {
+        let e = StubEmbedder::default();
+        (e.model(), e.dimensions(), e.prompt_format().to_string())
+    };
 
     for file in files {
         let text = if engram_ingest::pdf::is_pdf(&file) {
@@ -65,16 +74,27 @@ pub async fn run(
             mode_enum
         };
 
+        let source_path = file.display().to_string();
+        let doc_title = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("untitled")
+            .to_string();
+        let document_id = ctx.store.insert_document(
+            &kb,
+            &doc_title,
+            Some(&source_path),
+            &format!("{:?}", resolved_mode).to_ascii_lowercase(),
+            json!({ "ingested_from": source_path }),
+        )?;
+
         let source = match resolved_mode {
             Mode::Papers => MemorySource::Paper {
                 doi: None,
-                title: file
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("untitled")
-                    .to_string(),
+                title: doc_title,
                 section: None,
             },
+            Mode::Takeaways => MemorySource::General,
             Mode::Conversations => MemorySource::Conversation {
                 thread: file.display().to_string(),
                 turn: 0,
@@ -108,10 +128,11 @@ pub async fn run(
             valid_until: None,
             tags: vec![file.display().to_string()],
         };
-        ctx.store.insert_memory(&memory)?;
+        ctx.store.insert_memory_with_kb(&memory, &kb)?;
 
         let chunks: Vec<PendingChunk> = match resolved_mode {
             Mode::Papers => papers::chunk_paper(&text),
+            Mode::Takeaways => general_mode::chunk_general(&text),
             Mode::Conversations => conversations::chunk_conversation(&text),
             Mode::Repos => repos::chunk_repo_text(&text),
             _ => general_mode::chunk_general(&text),
@@ -147,14 +168,17 @@ pub async fn run(
         };
 
         for (chunk, emb) in chunks.iter().zip(embeddings.iter()) {
-            ctx.store.insert_chunk_with_embedding(
+            ctx.store.insert_chunk_with_embedding_meta(
                 Uuid::new_v4(),
                 memory.id,
                 &chunk.text,
                 chunk.position,
                 chunk.section.as_deref(),
                 emb,
-                model_name,
+                &model_name,
+                dims,
+                &prompt_format,
+                Some(document_id),
             )?;
             chunks_created += 1;
         }
@@ -165,19 +189,62 @@ pub async fn run(
     // Cost summary.
     let tokens_estimated = (total_embedded_chars + 3) / 4;
     let gemini_cost_usd = if have_gemini {
-        tokens_estimated as f64 * 0.15 / 1_000_000.0
+        gemini_embed_cost_usd(tokens_estimated as i64)
     } else {
         0.0
+    };
+    if have_gemini && chunks_created > 0 {
+        ctx.store.record_usage_event(
+            "gemini",
+            "ingest_embed",
+            Some(&model_name),
+            Some(&kb),
+            Some(&diary),
+            1,
+            chunks_created as i64,
+            tokens_estimated as i64,
+            0,
+            0.0,
+            gemini_cost_usd,
+            json!({
+                "dimensions": dims,
+                "prompt_format": prompt_format.clone(),
+                "files": memories_created,
+                "estimated": true,
+            }),
+        )?;
+    }
+
+    let compile_stats = match compile.as_str() {
+        "none" => None,
+        "evidence" => Some(crate::commands::compile::compile_kb(ctx, &kb).await?),
+        other => {
+            return Err(CliError::BadInput(format!(
+                "unknown compile mode: {other} (expected none|evidence)"
+            )))
+        }
     };
 
     let mut meta = Metadata::default();
     meta.elapsed_ms = start.elapsed().as_millis() as u64;
     meta.add("memories_created", memories_created);
     meta.add("chunks_created", chunks_created);
-    meta.add("embedder", model_name);
+    meta.add("embedder", model_name.clone());
+    meta.add("embed_dimensions", dims);
+    meta.add("embed_prompt_format", prompt_format.clone());
+    meta.add("kb", kb.clone());
+    if let Some(stats) = &compile_stats {
+        meta.add("compiled_claims", stats.claims);
+        meta.add("compiled_entities", stats.entities);
+        meta.add("compiled_relations", stats.relations);
+        meta.add("compiled_wiki_pages", stats.wiki_pages);
+    }
     meta.add("embed_chars", total_embedded_chars);
     meta.add("embed_tokens_estimated", tokens_estimated);
-    meta.add("embed_cost_usd_estimated", format!("{:.6}", gemini_cost_usd));
+    meta.add(
+        "embed_cost_usd_estimated",
+        format!("{:.6}", gemini_cost_usd),
+    );
 
     print_success(
         ctx.format,
@@ -185,6 +252,9 @@ pub async fn run(
             "memories_created": memories_created,
             "chunks_created": chunks_created,
             "mode": mode,
+            "kb": kb,
+            "compile": compile,
+            "compile_stats": compile_stats,
             "embed_chars": total_embedded_chars,
             "embed_tokens_estimated": tokens_estimated,
             "embed_cost_usd_estimated": gemini_cost_usd,
@@ -198,12 +268,13 @@ pub async fn run(
 fn parse_mode(s: &str) -> Result<Mode, CliError> {
     match s.to_ascii_lowercase().as_str() {
         "papers" => Ok(Mode::Papers),
+        "takeaways" | "notes" | "curated" => Ok(Mode::Takeaways),
         "conversations" | "convos" | "chats" => Ok(Mode::Conversations),
         "repos" | "code" => Ok(Mode::Repos),
         "general" => Ok(Mode::General),
         "auto" => Ok(Mode::Auto),
         other => Err(CliError::BadInput(format!(
-            "unknown mode: {other} (expected papers|conversations|repos|general|auto)"
+            "unknown mode: {other} (expected papers|takeaways|conversations|repos|general|auto)"
         ))),
     }
 }
@@ -264,7 +335,17 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CliError> {
             if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
                 if matches!(
                     ext.to_ascii_lowercase().as_str(),
-                    "txt" | "md" | "rst" | "json" | "rs" | "py" | "ts" | "js" | "go" | "java" | "pdf"
+                    "txt"
+                        | "md"
+                        | "rst"
+                        | "json"
+                        | "rs"
+                        | "py"
+                        | "ts"
+                        | "js"
+                        | "go"
+                        | "java"
+                        | "pdf"
                 ) {
                     out.push(p);
                 }

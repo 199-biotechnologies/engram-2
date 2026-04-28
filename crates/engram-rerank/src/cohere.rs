@@ -105,7 +105,10 @@ impl Reranker for CohereReranker {
                         tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
                         continue;
                     }
-                    return Err(RerankError::Http { provider: "cohere", source: e });
+                    return Err(RerankError::Http {
+                        provider: "cohere",
+                        source: e,
+                    });
                 }
             };
 
@@ -151,7 +154,10 @@ impl Reranker for CohereReranker {
                         tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
                         continue;
                     }
-                    return Err(RerankError::Http { provider: "cohere", source: e });
+                    return Err(RerankError::Http {
+                        provider: "cohere",
+                        source: e,
+                    });
                 }
             };
 

@@ -28,6 +28,7 @@ pub async fn run(
     match suite.as_str() {
         "mini" => run_mini(ctx).await,
         "mini-fts" => run_mini_fts(ctx),
+        "scientific-mini" | "science-mini" => run_scientific_mini(ctx).await,
         "longmemeval" => run_longmemeval(ctx, download, limit).await,
         "longmemeval-qa" | "lme-qa" => {
             run_longmemeval_qa(ctx, limit, answerer, judge, ragas, top_k, save).await
@@ -41,6 +42,152 @@ pub async fn run(
         }
         other => Err(CliError::BadInput(format!("unknown suite: {other}"))),
     }
+}
+
+async fn run_scientific_mini(ctx: &AppContext) -> Result<(), CliError> {
+    use crate::retrieval::{hybrid_recall, Filters, HybridParams, RecallMode};
+    use chrono::Utc;
+    use engram_core::types::{Memory, MemorySource};
+    use engram_embed::{Embedder, TaskMode};
+    use engram_ingest::chunker::naive_split;
+    use engram_rerank::passthrough::PassthroughReranker;
+    use engram_storage::SqliteStore;
+    use uuid::Uuid;
+
+    let store = SqliteStore::open_in_memory()?;
+    let fixture_ctx = AppContext {
+        format: ctx.format,
+        quiet: true,
+        store,
+    };
+    let kb = "scientific-mini";
+    fixture_ctx
+        .store
+        .ensure_kb(kb, Some("Tiny scientific evidence benchmark"))?;
+    let embedder = StubEmbedder::default();
+
+    let docs = [
+        (
+            "rapamycin-human",
+            "Rapamycin inhibits mTORC1 signaling. In a human randomized trial, low-dose everolimus improved influenza vaccine response in older adults, but lifespan was not measured.",
+        ),
+        (
+            "metformin-observational",
+            "Metformin activates AMPK in liver and muscle. Observational studies in patients with type 2 diabetes report lower mortality, but confounding remains a major limitation.",
+        ),
+        (
+            "hipporag",
+            "HippoRAG uses graph-structured retrieval to improve multi-hop question answering by linking entities across passages before final context assembly.",
+        ),
+    ];
+
+    for (title, text) in docs {
+        let document_id = fixture_ctx.store.insert_document(
+            kb,
+            title,
+            Some(title),
+            "papers",
+            serde_json::json!({}),
+        )?;
+        let memory = Memory {
+            id: Uuid::new_v4(),
+            content: text.to_string(),
+            created_at: Utc::now(),
+            event_time: None,
+            importance: 5,
+            emotional_weight: 0,
+            access_count: 0,
+            last_accessed: None,
+            stability: 1.0,
+            source: MemorySource::Paper {
+                doi: None,
+                title: title.to_string(),
+                section: None,
+            },
+            diary: "default".to_string(),
+            valid_from: None,
+            valid_until: None,
+            tags: vec![title.to_string()],
+        };
+        fixture_ctx.store.insert_memory_with_kb(&memory, kb)?;
+        let chunks = naive_split(text);
+        let chunk_texts = chunks.iter().map(|c| c.text.as_str()).collect::<Vec<_>>();
+        let embeddings = embedder
+            .embed_batch(&chunk_texts, TaskMode::RetrievalDocument)
+            .await?;
+        for (chunk, embedding) in chunks.iter().zip(embeddings.iter()) {
+            fixture_ctx.store.insert_chunk_with_embedding_meta(
+                Uuid::new_v4(),
+                memory.id,
+                &chunk.text,
+                chunk.position,
+                chunk.section.as_deref(),
+                embedding,
+                &embedder.model(),
+                embedder.dimensions(),
+                &embedder.prompt_format(),
+                Some(document_id),
+            )?;
+        }
+    }
+    let compile = crate::commands::compile::compile_kb(&fixture_ctx, kb).await?;
+    let cases = [
+        ("human rapamycin vaccine response", "everolimus"),
+        ("metformin mortality confounding", "confounding"),
+        ("graph retrieval multi-hop entities", "hipporag"),
+    ];
+    let mut per_question = Vec::new();
+    let mut correct = 0usize;
+    for (query, expected) in cases {
+        let reranker: Option<&PassthroughReranker> = None;
+        let results = hybrid_recall(
+            &fixture_ctx.store,
+            &embedder,
+            reranker,
+            HybridParams {
+                query,
+                top_k: 3,
+                rrf_k: 60.0,
+                rerank_top_n: 10,
+                filters: Filters {
+                    diary: Some("default".to_string()),
+                    kb: Some(kb.to_string()),
+                    valid_at: None,
+                },
+                mode: RecallMode::Evidence,
+                graph_hops: 1,
+                allow_mixed_embeddings: false,
+            },
+        )
+        .await?;
+        let hit = results
+            .iter()
+            .any(|r| r.content.to_ascii_lowercase().contains(expected));
+        if hit {
+            correct += 1;
+        }
+        per_question.push(serde_json::json!({
+            "query": query,
+            "expected": expected,
+            "hit": hit,
+            "top_result_kind": results.first().map(|r| r.kind.clone()),
+            "top_result": results.first().map(|r| r.content.clone()),
+        }));
+    }
+    let accuracy = correct as f64 / cases.len() as f64;
+    let payload = json!({
+        "suite": "scientific-mini",
+        "mode": "stub_hybrid_evidence",
+        "questions_evaluated": cases.len(),
+        "accuracy": accuracy,
+        "correct": correct,
+        "compile": compile,
+        "per_question": per_question,
+    });
+    print_success(ctx.format, payload, Metadata::default(), |data| {
+        println!("{}", serde_json::to_string_pretty(data).unwrap())
+    });
+    Ok(())
 }
 
 async fn run_mini(ctx: &AppContext) -> Result<(), CliError> {

@@ -46,6 +46,10 @@ pub enum Command {
         #[arg(long, default_value = "default")]
         diary: String,
 
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+
         /// Skip LLM-based fact extraction + contradiction detection.
         /// Use for cheap bulk imports where no contradiction check is needed.
         #[arg(long)]
@@ -66,9 +70,37 @@ pub enum Command {
         #[arg(long, default_value = "topic")]
         layer: String,
 
+        /// Retrieval mode: evidence|raw|wiki|explore|agent.
+        #[arg(long, default_value = "evidence")]
+        mode: String,
+
+        /// Retrieval profile: cloud_quality|fast|offline.
+        #[arg(long, default_value = "cloud_quality")]
+        profile: String,
+
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+
+        /// Search all KBs instead of only --kb.
+        #[arg(long)]
+        all_kbs: bool,
+
         /// Specialist agent diary namespace, or "*" for all.
         #[arg(long, default_value = "default")]
         diary: String,
+
+        /// Candidate count sent to rerank.
+        #[arg(long)]
+        rerank_top_n: Option<usize>,
+
+        /// Graph expansion hops. Explore mode may use 2 hops.
+        #[arg(long, default_value_t = 1)]
+        graph_hops: u8,
+
+        /// Permit comparing chunks embedded with different metadata.
+        #[arg(long)]
+        allow_mixed_embeddings: bool,
 
         /// Earliest event_time to include (RFC3339).
         #[arg(long)]
@@ -84,14 +116,135 @@ pub enum Command {
         /// Path to file or directory.
         path: PathBuf,
 
-        /// Mining mode: papers|conversations|repos|general|auto.
+        /// Mining mode: papers|takeaways|conversations|repos|general|auto.
         #[arg(long, default_value = "auto")]
         mode: String,
 
         /// Specialist agent diary namespace.
         #[arg(long, default_value = "default")]
         diary: String,
+
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+
+        /// Optional compiler mode after ingest: none|evidence.
+        #[arg(long, default_value = "none")]
+        compile: String,
     },
+
+    /// Inspect and manage ingested source documents.
+    #[command(subcommand)]
+    Documents(DocumentsCommand),
+
+    /// Manage knowledge bases/domains.
+    #[command(subcommand)]
+    Kb(KbCommand),
+
+    /// Compile a KB into claims, entities, relations, takeaways, and wiki pages.
+    Compile {
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+        /// Compile every document/chunk in the KB.
+        #[arg(long)]
+        all: bool,
+        /// Add LLM-assisted extraction and synthesis on top of deterministic compilation.
+        #[arg(long)]
+        llm: bool,
+        /// OpenRouter model for extraction. Defaults to Gemini 3.1 Flash-Lite Preview.
+        #[arg(long)]
+        extraction_model: Option<String>,
+        /// OpenRouter model for synthesis/wiki overview. Defaults to Gemini 3.1 Pro Preview.
+        #[arg(long)]
+        synthesis_model: Option<String>,
+        /// Limit LLM extraction chunks to control cost. Deterministic compile still scans all chunks.
+        #[arg(long)]
+        max_llm_chunks: Option<usize>,
+    },
+
+    /// Run an evidence-first research retrieval pass over a KB.
+    Research {
+        /// Research question.
+        query: String,
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+        /// Search all KBs instead of only --kb.
+        #[arg(long)]
+        all_kbs: bool,
+        /// Specialist agent diary namespace, or "*" for all.
+        #[arg(long, default_value = "default")]
+        diary: String,
+        /// Number of evidence leads.
+        #[arg(long, default_value_t = 12)]
+        top_k: usize,
+        /// Retrieval profile: cloud_quality|fast|offline.
+        #[arg(long, default_value = "cloud_quality")]
+        profile: String,
+        /// Permit comparing chunks embedded with different metadata.
+        #[arg(long)]
+        allow_mixed_embeddings: bool,
+    },
+
+    /// Inspect compile/daemon jobs.
+    #[command(subcommand)]
+    Jobs(JobsCommand),
+
+    /// Re-embed chunks with the active embedding model/profile.
+    Reindex {
+        /// Knowledge base/domain namespace.
+        #[arg(long)]
+        kb: Option<String>,
+        /// Reindex all KBs.
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Inspect generated wiki pages.
+    Wiki {
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+        /// Optional page path such as index.md or entities/rapamycin.md.
+        path: Option<String>,
+    },
+
+    /// Inspect the SQLite graph layer.
+    #[command(subcommand)]
+    Graph(GraphCommand),
+
+    /// Diagnose configuration, keys, schema, embeddings, and daemon port.
+    Doctor {
+        /// Also require OpenRouter for compiler checks.
+        #[arg(long)]
+        compiler: bool,
+    },
+
+    /// Run the local engram daemon/API.
+    Serve {
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        #[arg(long, default_value_t = 8768)]
+        port: u16,
+        /// Auth token required when binding to non-local addresses.
+        #[arg(long)]
+        token: Option<String>,
+    },
+
+    /// Summarize recorded Gemini/Cohere/API usage.
+    Usage {
+        /// Optional KB/domain filter.
+        #[arg(long)]
+        kb: Option<String>,
+        /// Optional RFC3339 lower-bound timestamp.
+        #[arg(long)]
+        since: Option<String>,
+    },
+
+    /// Configure and inspect local API usage budgets.
+    #[command(subcommand)]
+    Budget(BudgetCommand),
 
     /// Soft-delete a memory by id. Destructive — requires --confirm.
     #[command(visible_aliases = ["delete", "rm"])]
@@ -128,6 +281,10 @@ pub enum Command {
         /// Output format (json).
         #[arg(long, default_value = "json")]
         format: String,
+
+        /// Knowledge base/domain namespace.
+        #[arg(long)]
+        kb: Option<String>,
     },
 
     /// Import memories from an export file.
@@ -138,7 +295,7 @@ pub enum Command {
 
     /// Run a benchmark suite.
     Bench {
-        /// Benchmark name: mini | mini-fts | longmemeval | longmemeval-qa | locomo-qa | locomo-plus | mab
+        /// Benchmark name: mini | mini-fts | scientific-mini | longmemeval | longmemeval-qa | locomo-qa | locomo-plus | mab
         #[arg(default_value = "mini")]
         suite: String,
 
@@ -179,7 +336,7 @@ pub enum Command {
     #[command(subcommand)]
     Config(ConfigCommand),
 
-    /// Manage the agent skill signpost.
+    /// Manage the agent skill package.
     #[command(subcommand)]
     Skill(SkillCommand),
 
@@ -202,6 +359,114 @@ pub enum ConfigCommand {
 }
 
 #[derive(Subcommand, Debug)]
+pub enum KbCommand {
+    /// Create or update a KB.
+    Create {
+        name: String,
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// List KBs.
+    #[command(visible_aliases = ["ls"])]
+    List,
+    /// Show one KB.
+    Show { name: String },
+    /// Delete one KB. Requires --confirm.
+    Delete {
+        name: String,
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DocumentsCommand {
+    /// List ingested source documents.
+    #[command(visible_aliases = ["ls"])]
+    List {
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+        /// Search all KBs instead of only --kb.
+        #[arg(long)]
+        all_kbs: bool,
+        /// Max documents to return.
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+    },
+    /// Show one document.
+    Show { id: String },
+    /// Delete one document and its recallable source chunks. Requires --confirm.
+    Delete {
+        id: String,
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum JobsCommand {
+    /// List compiler jobs.
+    #[command(visible_aliases = ["ls"])]
+    List {
+        /// Knowledge base/domain namespace.
+        #[arg(long, default_value = "default")]
+        kb: String,
+        /// Search all KBs instead of only --kb.
+        #[arg(long)]
+        all_kbs: bool,
+        /// Max jobs to return.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
+    /// Show one job.
+    Show { id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BudgetCommand {
+    /// Show configured budget and current recorded usage.
+    Show {
+        /// Optional KB/domain budget. Omit for global.
+        #[arg(long)]
+        kb: Option<String>,
+    },
+    /// Set a global or per-KB budget.
+    Set {
+        /// Optional KB/domain budget. Omit for global.
+        #[arg(long)]
+        kb: Option<String>,
+        /// Daily spend guardrail in USD.
+        #[arg(long)]
+        daily_usd: Option<f64>,
+        /// Monthly spend guardrail in USD.
+        #[arg(long)]
+        monthly_usd: Option<f64>,
+    },
+    /// Clear a global or per-KB budget.
+    Clear {
+        /// Optional KB/domain budget. Omit for global.
+        #[arg(long)]
+        kb: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum GraphCommand {
+    /// Show graph neighbors for one entity.
+    Neighbors {
+        name: String,
+        #[arg(long, default_value = "default")]
+        kb: String,
+        #[arg(long, default_value_t = 1)]
+        hops: u8,
+        /// Minimum relation weight to include.
+        #[arg(long, default_value_t = 1.0)]
+        min_weight: f32,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum EntitiesCommand {
     /// List entities by mention count.
     #[command(visible_aliases = ["ls"])]
@@ -212,12 +477,18 @@ pub enum EntitiesCommand {
         /// Minimum mention count filter.
         #[arg(long, default_value_t = 1)]
         min_mentions: u32,
+        /// Knowledge base/domain namespace. Pass "*" for all.
+        #[arg(long, default_value = "default")]
+        kb: String,
     },
     /// Show details for one entity.
     #[command(visible_aliases = ["get"])]
     Show {
         /// Entity name (case-insensitive).
         name: String,
+        /// Knowledge base/domain namespace. Pass "*" for all.
+        #[arg(long, default_value = "default")]
+        kb: String,
     },
 }
 
@@ -232,6 +503,9 @@ pub enum FactsCommand {
         /// Diary scope. Default is "default".
         #[arg(long, default_value = "default")]
         diary: String,
+        /// Knowledge base/domain namespace. Pass "*" for all.
+        #[arg(long, default_value = "default")]
+        kb: String,
         /// Include superseded (historic) facts in addition to active ones.
         #[arg(long)]
         all: bool,
@@ -247,6 +521,9 @@ pub enum FactsCommand {
         /// Diary scope. Default is "default". Pass "*" for all.
         #[arg(long, default_value = "default")]
         diary: String,
+        /// Knowledge base/domain namespace. Pass "*" for all.
+        #[arg(long, default_value = "default")]
+        kb: String,
     },
     /// Show recent contradictions: facts that were superseded by newer claims.
     Conflicts {
@@ -257,8 +534,14 @@ pub enum FactsCommand {
 
 #[derive(Subcommand, Debug)]
 pub enum SkillCommand {
-    /// Install the engram skill signpost into ~/.claude, ~/.codex, ~/.gemini.
+    /// Install the engram skill into agent skill directories.
     Install,
-    /// Remove the installed signposts.
+    /// Package the engram skill folder as a ZIP for app upload.
+    Package {
+        /// Output ZIP path.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Remove the installed skill files.
     Uninstall,
 }

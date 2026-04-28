@@ -43,7 +43,9 @@ fn agent_info_returns_raw_manifest_not_enveloped() {
     assert!(v.get("commands").is_some());
     assert!(v.get("exit_codes").is_some());
     // MUST NOT be wrapped in envelope.
-    assert!(v.get("status").is_none() || v.get("status").and_then(|v| v.as_str()) != Some("success"));
+    assert!(
+        v.get("status").is_none() || v.get("status").and_then(|v| v.as_str()) != Some("success")
+    );
 }
 
 #[test]
@@ -62,12 +64,55 @@ fn help_flag_exits_zero() {
 }
 
 #[test]
-fn remember_then_recall_roundtrip() {
-    let (tmp, mut cmd1) = with_isolated_home();
-    cmd1.args(["remember", "Rapamycin extends mouse lifespan via mTORC1 inhibition."])
+fn skill_install_writes_cli_and_cross_agent_locations() {
+    let (tmp, mut cmd) = with_isolated_home();
+    let out = cmd
         .arg("--json")
+        .args(["skill", "install"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = parse_stdout(&out);
+    assert_eq!(v["status"], "success");
+
+    for path in [
+        ".claude/skills/engram/SKILL.md",
+        ".codex/skills/engram/SKILL.md",
+        ".gemini/skills/engram/SKILL.md",
+        ".agents/skills/engram/SKILL.md",
+        ".agents/skills/engram/agents/openai.yaml",
+    ] {
+        assert!(tmp.path().join(path).exists(), "missing {path}");
+    }
+}
+
+#[test]
+fn skill_package_creates_uploadable_skill_zip() {
+    let (tmp, mut cmd) = with_isolated_home();
+    let zip_path = tmp.path().join("engram-skill.zip");
+    cmd.arg("--json")
+        .args(["skill", "package", "--out", zip_path.to_str().unwrap()])
         .assert()
         .success();
+
+    let file = std::fs::File::open(&zip_path).expect("zip exists");
+    let mut archive = zip::ZipArchive::new(file).expect("valid zip");
+    assert!(archive.by_name("engram/SKILL.md").is_ok());
+    assert!(archive.by_name("engram/agents/openai.yaml").is_ok());
+}
+
+#[test]
+fn remember_then_recall_roundtrip() {
+    let (tmp, mut cmd1) = with_isolated_home();
+    cmd1.args([
+        "remember",
+        "Rapamycin extends mouse lifespan via mTORC1 inhibition.",
+    ])
+    .arg("--json")
+    .assert()
+    .success();
 
     let mut cmd2 = engram();
     cmd2.env("HOME", tmp.path());
@@ -93,6 +138,163 @@ fn remember_then_recall_roundtrip() {
 }
 
 #[test]
+fn recall_refuses_mixed_embedding_metadata() {
+    let (tmp, mut cmd1) = with_isolated_home();
+    cmd1.args(["remember", "Rapamycin inhibits mTORC1."])
+        .arg("--json")
+        .assert()
+        .success();
+
+    let mut cmd2 = Command::cargo_bin("engram").expect("binary built");
+    cmd2.env("HOME", tmp.path());
+    cmd2.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    cmd2.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    cmd2.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    cmd2.env("GEMINI_API_KEY", "fake-gemini-key-for-guard-only");
+    let out = cmd2
+        .args(["recall", "rapamycin"])
+        .arg("--json")
+        .assert()
+        .code(2)
+        .get_output()
+        .stderr
+        .clone();
+    let line = String::from_utf8_lossy(&out)
+        .lines()
+        .rev()
+        .find(|l| l.trim_start().starts_with('{'))
+        .expect("JSON error on stderr")
+        .to_string();
+    let v: Value = serde_json::from_str(&line).expect("parseable");
+    assert_eq!(v["error"]["code"], "config_error");
+    assert!(v["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("embedding metadata mismatch"));
+}
+
+#[test]
+fn kb_ingest_compile_entities_flow() {
+    let (tmp, mut kb_cmd) = with_isolated_home();
+    kb_cmd
+        .args([
+            "kb",
+            "create",
+            "ageing-biology",
+            "--description",
+            "Ageing biology",
+        ])
+        .arg("--json")
+        .assert()
+        .success();
+
+    let fixture = tmp.path().join("paper.md");
+    std::fs::write(
+        &fixture,
+        "Rapamycin inhibits mTORC1 signaling in mice. Human trials measure vaccine response rather than lifespan.",
+    )
+    .unwrap();
+
+    let mut ingest_cmd = engram();
+    ingest_cmd.env("HOME", tmp.path());
+    ingest_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    ingest_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    ingest_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    ingest_cmd
+        .args([
+            "ingest",
+            fixture.to_str().unwrap(),
+            "--kb",
+            "ageing-biology",
+            "--mode",
+            "takeaways",
+            "--compile",
+            "evidence",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let mut entities_cmd = engram();
+    entities_cmd.env("HOME", tmp.path());
+    entities_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    entities_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    entities_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    let out = entities_cmd
+        .args(["entities", "list", "--kb", "ageing-biology", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = parse_stdout(&out);
+    assert_eq!(v["status"], "success");
+    assert!(v["data"]["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["canonical_name"] == "Rapamycin"));
+}
+
+#[test]
+fn kb_delete_removes_recallable_memories_in_that_kb() {
+    let (tmp, mut kb_cmd) = with_isolated_home();
+    kb_cmd
+        .args(["kb", "create", "throwaway", "--json"])
+        .assert()
+        .success();
+
+    let mut remember_cmd = engram();
+    remember_cmd.env("HOME", tmp.path());
+    remember_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    remember_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    remember_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    remember_cmd
+        .args([
+            "remember",
+            "Temporary deletion marker alpha beta.",
+            "--kb",
+            "throwaway",
+            "--no-facts",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let mut delete_cmd = engram();
+    delete_cmd.env("HOME", tmp.path());
+    delete_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    delete_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    delete_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    delete_cmd
+        .args(["kb", "delete", "throwaway", "--confirm", "--json"])
+        .assert()
+        .success();
+
+    let mut recall_cmd = engram();
+    recall_cmd.env("HOME", tmp.path());
+    recall_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    recall_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    recall_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    let out = recall_cmd
+        .args([
+            "recall",
+            "Temporary deletion marker",
+            "--kb",
+            "throwaway",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = parse_stdout(&out);
+    assert_eq!(v["status"], "no_results");
+    assert_eq!(v["data"]["results"].as_array().unwrap().len(), 0);
+}
+
+#[test]
 fn recall_empty_query_is_bad_input() {
     let out = engram()
         .args(["recall", ""])
@@ -113,6 +315,130 @@ fn recall_empty_query_is_bad_input() {
     assert_eq!(v["status"], "error");
     assert_eq!(v["error"]["exit_code"], 3);
     assert_eq!(v["error"]["code"], "bad_input");
+}
+
+#[test]
+fn recall_no_results_sets_top_level_status() {
+    let (_tmp, mut cmd) = with_isolated_home();
+    let out = cmd
+        .args(["recall", "nothing stored here", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = parse_stdout(&out);
+    assert_eq!(v["status"], "no_results");
+    assert_eq!(v["data"]["status"], "no_results");
+}
+
+#[test]
+fn usage_command_returns_summary_envelope() {
+    let (_tmp, mut cmd) = with_isolated_home();
+    let out = cmd
+        .args(["usage", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let v = parse_stdout(&out);
+    assert_eq!(v["status"], "success");
+    assert!(v["data"]["summary"].is_array());
+    assert_eq!(v["data"]["totals"]["events"], 0);
+}
+
+#[test]
+fn documents_jobs_budget_and_scientific_bench_work() {
+    let (tmp, mut ingest_cmd) = with_isolated_home();
+    let fixture = tmp.path().join("paper.md");
+    std::fs::write(
+        &fixture,
+        "Rapamycin inhibits mTORC1 in mice. A human trial measured vaccine response.",
+    )
+    .unwrap();
+    ingest_cmd
+        .args([
+            "ingest",
+            fixture.to_str().unwrap(),
+            "--kb",
+            "ageing-biology",
+            "--mode",
+            "papers",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let mut docs_cmd = engram();
+    docs_cmd.env("HOME", tmp.path());
+    docs_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    docs_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    docs_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    let docs_out = docs_cmd
+        .args(["documents", "list", "--kb", "ageing-biology", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let docs = parse_stdout(&docs_out);
+    assert_eq!(docs["status"], "success");
+    assert_eq!(docs["data"]["documents"].as_array().unwrap().len(), 1);
+
+    let mut compile_cmd = engram();
+    compile_cmd.env("HOME", tmp.path());
+    compile_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    compile_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    compile_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    compile_cmd
+        .args(["compile", "--kb", "ageing-biology", "--all", "--json"])
+        .assert()
+        .success();
+
+    let mut jobs_cmd = engram();
+    jobs_cmd.env("HOME", tmp.path());
+    jobs_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    jobs_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    jobs_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    let jobs_out = jobs_cmd
+        .args(["jobs", "list", "--kb", "ageing-biology", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let jobs = parse_stdout(&jobs_out);
+    assert!(jobs["data"]["jobs"].as_array().unwrap().len() >= 1);
+
+    let mut budget_cmd = engram();
+    budget_cmd.env("HOME", tmp.path());
+    budget_cmd.env("XDG_CONFIG_HOME", tmp.path().join(".config"));
+    budget_cmd.env("XDG_DATA_HOME", tmp.path().join(".local/share"));
+    budget_cmd.env("XDG_CACHE_HOME", tmp.path().join(".cache"));
+    budget_cmd
+        .args([
+            "budget",
+            "set",
+            "--kb",
+            "ageing-biology",
+            "--daily-usd",
+            "2.50",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let out = engram()
+        .args(["bench", "scientific-mini", "--json"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let bench = parse_stdout(&out);
+    assert_eq!(bench["data"]["suite"], "scientific-mini");
+    assert_eq!(bench["data"]["accuracy"], 1.0);
 }
 
 #[test]
@@ -199,10 +525,13 @@ fn export_returns_envelope_with_count() {
 #[test]
 fn import_from_export_roundtrip() {
     let (tmp, mut cmd1) = with_isolated_home();
-    cmd1.args(["remember", "Metformin reduces mortality in type 2 diabetics."])
-        .arg("--json")
-        .assert()
-        .success();
+    cmd1.args([
+        "remember",
+        "Metformin reduces mortality in type 2 diabetics.",
+    ])
+    .arg("--json")
+    .assert()
+    .success();
 
     let mut cmd2 = engram();
     cmd2.env("HOME", tmp.path());
@@ -256,7 +585,10 @@ fn config_set_writes_toml_file() {
         .join("engram")
         .join("config.toml");
     let path_exists_anywhere = cfg_path.exists()
-        || tmp.path().join("Library/Application Support/bio.199-biotechnologies.engram/config.toml").exists();
+        || tmp
+            .path()
+            .join("Library/Application Support/bio.199-biotechnologies.engram/config.toml")
+            .exists();
     assert!(path_exists_anywhere, "config.toml should exist after set");
 }
 

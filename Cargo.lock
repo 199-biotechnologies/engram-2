@@ -104,6 +104,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "assert_cmd"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -338,6 +347,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-utils"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+
+[[package]]
 name = "crossterm"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -377,6 +392,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 dependencies = [
  "powerfmt",
+]
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -443,154 +469,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "engram-bench"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "engram-core",
- "engram-embed",
- "engram-ingest",
- "engram-llm",
- "engram-rerank",
- "engram-storage",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "engram-cli"
-version = "0.1.0"
-dependencies = [
- "assert_cmd",
- "chrono",
- "clap",
- "comfy-table",
- "directories",
- "engram-bench",
- "engram-core",
- "engram-embed",
- "engram-graph",
- "engram-ingest",
- "engram-llm",
- "engram-rerank",
- "engram-storage",
- "figment",
- "owo-colors",
- "predicates",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "engram-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "ordered-float",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "engram-embed"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "engram-core",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "engram-graph"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "engram-core",
- "engram-llm",
- "engram-storage",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "engram-ingest"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "engram-core",
- "engram-storage",
- "pdf-extract",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "engram-llm"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "engram-rerank"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "engram-core",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "engram-storage"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "directories",
- "engram-core",
- "rusqlite",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -1329,6 +1207,155 @@ name = "owo-colors"
 version = "4.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d211803b9b6b570f68772237e415a029d5a50c65d382910b879fb19d3271f94d"
+
+[[package]]
+name = "paperfoot-engram"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "chrono",
+ "clap",
+ "comfy-table",
+ "directories",
+ "figment",
+ "owo-colors",
+ "paperfoot-engram-bench",
+ "paperfoot-engram-core",
+ "paperfoot-engram-embed",
+ "paperfoot-engram-graph",
+ "paperfoot-engram-ingest",
+ "paperfoot-engram-llm",
+ "paperfoot-engram-rerank",
+ "paperfoot-engram-storage",
+ "predicates",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zip",
+]
+
+[[package]]
+name = "paperfoot-engram-bench"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "paperfoot-engram-core",
+ "paperfoot-engram-embed",
+ "paperfoot-engram-ingest",
+ "paperfoot-engram-llm",
+ "paperfoot-engram-rerank",
+ "paperfoot-engram-storage",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "paperfoot-engram-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "ordered-float",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "paperfoot-engram-embed"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "paperfoot-engram-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "paperfoot-engram-graph"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "paperfoot-engram-core",
+ "paperfoot-engram-llm",
+ "paperfoot-engram-storage",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "paperfoot-engram-ingest"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "paperfoot-engram-core",
+ "paperfoot-engram-storage",
+ "pdf-extract",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "paperfoot-engram-llm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "paperfoot-engram-rerank"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "paperfoot-engram-core",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "paperfoot-engram-storage"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "directories",
+ "paperfoot-engram-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "parking_lot"
@@ -3121,6 +3148,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "zip"
+version = "2.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "crossbeam-utils",
+ "displaydoc",
+ "indexmap",
+ "memchr",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

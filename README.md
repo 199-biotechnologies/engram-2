@@ -6,16 +6,18 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![LongMemEval S R@5](https://img.shields.io/badge/LongMemEval_S_R%405-0.99-brightgreen)](#benchmarks)
 [![LoCoMo-QA](https://img.shields.io/badge/LoCoMo--QA_strict-74.5%25-blue)](#benchmarks)
-[![tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)](crates/engram-cli/tests/cli.rs)
+[![tests](https://img.shields.io/badge/tests-75%20passing-brightgreen)](crates/engram-cli/tests/cli.rs)
 
 ```bash
 git clone https://github.com/paperfoot/engram-cli
-cd engram-2
+cd engram-cli
 cargo install --path crates/engram-cli --locked
-engram skill install          # tells Claude/Codex/Gemini it exists
+engram skill install          # tells Claude Code, Codex, Gemini CLI, and .agents clients it exists
 engram config set keys.gemini $GEMINI_API_KEY
+engram config set keys.cohere $COHERE_API_KEY
+engram kb create ageing-biology --description "Ageing biology and longevity science"
 engram remember "Rapamycin extends mouse lifespan via mTORC1 inhibition."
-engram recall "what drug extends lifespan"    # finds it
+engram recall "what drug extends lifespan" --kb ageing-biology --mode evidence
 ```
 
 ---
@@ -30,7 +32,22 @@ engram is a **knowledge engine** that gives AI agents three things they currentl
 
 3. **Expert context delivery.** Feed an agent 50 papers on rapamycin and it becomes a rapamycin expert. Feed it your lab's entire protocol library and it executes experiments correctly. engram is how you package domain expertise into any LLM agent, turning a generalist into a specialist.
 
-The interface is a single Rust CLI binary. Your agent shells out to `engram recall` / `engram remember` / `engram ingest` — the same way it already uses `gh` and `jq`. No MCP server. No web service. No cloud dependency for the store. One `agent-info` call (~1,400 tokens) and the agent knows every command.
+The interface is a Rust CLI plus an optional local daemon. Your agent shells out to `engram recall` / `engram remember` / `engram ingest` the same way it already uses `gh` and `jq`, or calls `engram serve` on `127.0.0.1:8768` for always-on integrations. No MCP server. No cloud dependency for the store. One `agent-info` call and the agent knows every command.
+
+## What you can build with it
+
+engram is not only a personal memory tool and not only a science RAG. It is a local-first way to package **specialized domain expertise** for any agent:
+
+| Use case | What goes in | How agents use it |
+|---|---|---|
+| **Medicine and clinical research** | Guidelines, trial papers, protocols, safety notes, curated takeaways | Retrieve cited evidence, exact numbers, cohorts, dosages, contraindications, and source spans. engram is an evidence tool, not a clinician. |
+| **Science and research papers** | PDFs, review papers, lab notes, methods sections, tables, hypotheses, contradictions | Build a domain KB such as `ageing-biology`, compile claims/entities/relations, then answer with citations. |
+| **Coding and tool expertise** | API docs, repos, release notes, architecture decisions, migration guides | Give agents a KB such as `swiftui-ios`, `bioinformatics-tools`, or `coding-agents` so they use current local docs instead of stale model memory. |
+| **Customer support** | Help center docs, product policies, resolved ticket takeaways, troubleshooting runbooks | Turn a support agent into a product specialist. Use KBs for product knowledge and diaries for agent/team memory. |
+| **Company/project memory** | Decisions, preferences, release notes, handoffs, operational facts | Use `remember` for durable facts and `recall --mode agent` before doing work. |
+| **Multi-domain expert agents** | Separate KBs for each source corpus | Query one KB for precision, or use `--all-kbs` only when a cross-domain answer is intended. |
+
+The important split is: **KBs are source corpora/domains** (`ageing-biology`, `swiftui-ios`, `acme-support`), while **diaries are agent/user namespaces** (`default`, `code-reviewer`, `support-tier2`). Keep those separate and the system stays understandable.
 
 ## Why not MCP / vector databases / RAG-as-a-service?
 
@@ -83,6 +100,7 @@ Answerer: `openai/gpt-5.4`. Judge: `openai/gpt-5.4` (strict — complete lists r
 engram bench longmemeval --json                          # full 500
 engram bench longmemeval --limit 50 --json               # first 50
 engram bench mini --json                                 # 10-question smoke
+engram bench scientific-mini --json                      # evidence compiler/retrieval smoke
 
 # End-to-end QA (requires OPENROUTER_API_KEY for answerer + judge):
 engram bench locomo-qa --limit 50 --json                 # ~3-8 minutes
@@ -106,6 +124,7 @@ All runs log full per-question detail, token counts, model IDs, gold evidence re
 | `mab` (`test_time_learning`) | wired | same | 6 rows, MCC + movie rec |
 | `mab` (`long_range_understanding`) | partial | same | LLM-judge for DetectiveQA only; ∞Bench-Sum F1 not yet implemented |
 | `mab` (`conflict_resolution`) | wired | same | Selective forgetting |
+| `scientific-mini` | wired | local fixture | Tiny cited evidence compiler + retrieval smoke. Offline/stub deterministic. |
 
 Run any of them with `engram bench <suite> --limit N`. Datasets must be downloaded first (commands printed by the CLI on first run).
 
@@ -114,11 +133,31 @@ Run any of them with `engram bench <suite> --limit N`. Datasets must be download
 ```bash
 # Prerequisite: Rust 1.80+ (install via rustup.rs if needed)
 git clone https://github.com/paperfoot/engram-cli
-cd engram-2
+cd engram-cli
 cargo install --path crates/engram-cli --locked
 ```
 
 One binary at `~/.cargo/bin/engram`. No runtime, no Python, no Docker, no services. `engram --version` should print `engram 0.1.0`.
+
+### Package manager status
+
+The live install path today is source install from this repository:
+
+```bash
+cargo install --path crates/engram-cli --locked
+```
+
+The release-facing commands are intentionally documented as **not live until release automation exists**:
+
+```bash
+# After crates.io publish:
+cargo install paperfoot-engram --locked
+
+# After Homebrew tap/formula publish:
+brew install paperfoot/tap/engram
+```
+
+`engram update` is still a structured stub until GitHub Releases publish signed/prebuilt artifacts. The crates.io package name is `paperfoot-engram` because `engram-cli` is already owned by another project on crates.io. The handoff tracks Homebrew and release binaries as packaging work, not current guarantees.
 
 ### Configure keys
 
@@ -126,14 +165,17 @@ One binary at `~/.cargo/bin/engram`. No runtime, no Python, no Docker, no servic
 # Required for real hybrid retrieval. Free tier at https://aistudio.google.com/apikey
 engram config set keys.gemini $GEMINI_API_KEY
 
-# Optional — adds ~12 accuracy points via reranking. https://dashboard.cohere.com/api-keys
+# Default reranker for cloud_quality recall. https://dashboard.cohere.com/api-keys
 engram config set keys.cohere $COHERE_API_KEY
 
+# Optional for fact extraction / synthesis paths.
+engram config set keys.openrouter $OPENROUTER_API_KEY
+
 engram config check
-# -> { "gemini": "configured", "cohere": "configured (optional)", "ok": true }
+# -> gemini/cohere configured; doctor checks OpenRouter when compiler mode needs it
 ```
 
-Keys are resolved in order: **explicit env var → `~/.config/engram/config.toml` → none**. Config file is written with `0600` perms (user-only). Without Gemini, recall falls back to a deterministic offline stub — useful for CI, unusable for real quality.
+Keys are resolved in order: **explicit env var → config TOML → none**. Config file is written with `0600` perms (user-only). `engram config show` and `engram doctor --json` never print full secrets. Without Gemini, recall falls back to a deterministic offline stub — useful for CI, unusable for real quality.
 
 ### Tell your agents about it
 
@@ -141,7 +183,29 @@ Keys are resolved in order: **explicit env var → `~/.config/engram/config.toml
 engram skill install
 ```
 
-This writes a `SKILL.md` signpost to `~/.claude/skills/engram/`, `~/.codex/skills/engram/`, and `~/.gemini/skills/engram/`. Any agent that reads those directories will discover `engram`, learn the memory loop pattern, and start using it autonomously.
+This writes a portable Agent Skills folder (`SKILL.md` plus Codex metadata at `agents/openai.yaml`) to:
+
+| Target | Path | Notes |
+|---|---|---|
+| Claude Code | `~/.claude/skills/engram/` | Claude Code personal skill path. |
+| Codex legacy/current local installs | `~/.codex/skills/engram/` | Used by this Codex desktop setup and older Codex installs. |
+| Codex/open Agent Skills convention | `~/.agents/skills/engram/` | Current cross-client/user-level convention; Codex also scans repo `.agents/skills`. |
+| Gemini CLI | `~/.gemini/skills/engram/` | Gemini CLI personal skill path. |
+
+Claude.ai / Claude desktop app custom skills are uploaded as packages rather than installed by writing to a hidden app-support directory:
+
+```bash
+engram skill package --out engram-skill.zip
+```
+
+Upload that ZIP in Claude's Skills UI and enable it. For Codex app, the installed folder includes `agents/openai.yaml` so the app gets a display name, short description, brand color, default prompt, and implicit invocation policy.
+
+Format notes from current docs:
+
+- The portable base format is a directory with `SKILL.md`, YAML frontmatter, and Markdown instructions. `name` and `description` are the only universally required fields.
+- Claude Code supports additional frontmatter such as `when_to_use`, `argument-hint`, `disable-model-invocation`, `allowed-tools`, `context`, `agent`, `paths`, and hooks. `allowed-tools` is Claude Code CLI-specific and is not relied on here.
+- Codex CLI, IDE, and Codex app use the open Agent Skills format, support explicit `$skill` invocation, and optionally read `agents/openai.yaml` for app UI metadata and invocation policy.
+- Project-scoped skills should live in `.agents/skills/` for cross-client use. Claude Code also supports project `.claude/skills/`.
 
 ## The memory loop (how agents should use engram)
 
@@ -160,6 +224,60 @@ engram remember "Boris prefers Rust over Go for CLI tools."              --impor
 
 Rule of thumb: save preferences, explicit decisions with rationale, stable facts with citations, and corrections. Don't save task-local state or conversation filler.
 
+## Domain knowledge bases
+
+Knowledge is now organized into first-class KBs/domains. `diary` remains the agent/user namespace; `kb` is the source corpus/domain namespace.
+
+```bash
+engram kb create ageing-biology --description "Ageing biology and longevity science"
+engram kb list --json
+
+engram ingest ./papers --kb ageing-biology --mode papers --compile evidence --json
+engram ingest ./takeaways --kb ageing-biology --mode takeaways --compile evidence --json
+
+engram recall "rapamycin dosing evidence in humans" \
+  --kb ageing-biology \
+  --mode evidence \
+  --profile cloud_quality \
+  --top-k 10 \
+  --json
+
+engram usage --kb ageing-biology --json
+engram budget set --kb ageing-biology --daily-usd 5 --monthly-usd 100
+```
+
+Default `cloud_quality` recall uses Gemini Embedding 2 at 1536 dimensions, FTS5 BM25, claim/entity search, graph expansion, and Cohere `rerank-v3.5` when configured. Existing legacy embeddings are refused during recall until you run `engram reindex --kb <name>` or explicitly pass `--allow-mixed-embeddings`.
+
+`engram usage` summarizes recorded cloud usage by provider, operation, model, KB, estimated input/output tokens, Cohere search units, and estimated cost. Gemini embedding token counts use a local chars/4 estimate. Cohere is tracked as `search_units`; set `ENGRAM_COHERE_RERANK_USD_PER_SEARCH` if you want local dollar estimates. `engram budget` adds local daily/monthly guardrails; provider invoices remain the source of truth.
+
+### Domain recipes
+
+```bash
+# Medical / biology evidence base
+engram kb create ageing-biology --description "Ageing biology, longevity, rapamycin, senescence, mTOR, AMPK"
+engram ingest ./papers/ageing --kb ageing-biology --mode papers --compile evidence
+engram recall "human rapamycin dosing safety evidence" --kb ageing-biology --mode evidence --json
+
+# Bioinformatics or computational biology
+engram kb create bioinformatics --description "Pipelines, tools, genomics, alignment, variant calling"
+engram ingest ./docs/bioinformatics --kb bioinformatics --mode repos --compile evidence
+engram recall "best current approach for single-cell RNA-seq batch correction" --kb bioinformatics --mode evidence --json
+
+# Coding/tool specialist
+engram kb create swiftui-ios --description "SwiftUI, iOS app architecture, Apple platform docs, local project decisions"
+engram ingest ./apple-docs --kb swiftui-ios --mode general --compile evidence
+engram ingest ./project-notes --kb swiftui-ios --mode takeaways --compile evidence
+engram recall "SwiftUI navigation stack migration pattern" --kb swiftui-ios --mode agent --json
+
+# Customer-support specialist
+engram kb create acme-support --description "Acme product help center, policies, support macros, resolved ticket lessons"
+engram ingest ./help-center --kb acme-support --mode general --compile evidence
+engram ingest ./support-takeaways --kb acme-support --mode takeaways --compile evidence
+engram recall "refund policy for annual plans" --kb acme-support --mode evidence --json
+```
+
+For high-stakes domains such as medicine, use engram to retrieve and cite evidence. The agent still needs to present uncertainty, distinguish papers from guidelines, and avoid turning retrieved snippets into diagnosis or treatment instructions without appropriate review.
+
 ## Scientific papers workflow
 
 engram is purpose-built for ingesting and querying research papers with real citations.
@@ -172,42 +290,49 @@ curl -sL -o bert.pdf  https://arxiv.org/pdf/1810.04805.pdf   # BERT
 # Ingest. This runs pdf-extract -> section-aware chunking (preserves
 # "Methods > Cell Culture" breadcrumbs) -> Gemini Embedding 2 (batched,
 # token-budgeted) -> SQLite BLOBs. Embeddings persist forever.
-engram ingest . --mode papers
+engram ingest . --kb ageing-biology --mode papers --compile evidence
 
 # Ask questions. Returns the exact chunks with scores and sources.
-engram recall "personalized pagerank for multi-hop retrieval" --top-k 3 --json
+engram recall "personalized pagerank for multi-hop retrieval" --kb ageing-biology --top-k 3 --json
+
+# Optional LLM compiler pass:
+# extraction defaults to google/gemini-3.1-flash-lite-preview,
+# synthesis defaults to google/gemini-3.1-pro-preview.
+engram compile --kb ageing-biology --all --llm --max-llm-chunks 25
+
+# Agentic research pass: returns a query plan, evidence leads, and citation readiness.
+engram research "what human evidence exists for rapamycin dosing?" --kb ageing-biology --json
 
 # Browse what engram extracted from the corpus
-engram entities list --limit 10
+engram documents list --kb ageing-biology --json
+engram jobs list --kb ageing-biology --json
+engram entities list --kb ageing-biology --limit 10
 # -> BERT (58), HippoRAG (56), LightRAG (52), LLM (39), RAG (36), ...
 ```
 
-Each result has `chunk_id`, `score`, `content`, and `sources: ["dense","lexical","reranker"]`. **Your agent should quote the content and cite the chunk_id** so you can always re-run `engram recall` to verify a claim.
+Each result has `id`, `kind` (`claim|chunk|wiki_page|entity|relation`), `score`, `content`, citations, KB, and `sources`. **Your agent should quote the content and cite the source/chunk_id** so you can always re-run `engram recall` to verify a claim.
 
 ## Architecture
 
 ```
         query
           │
- ┌────────┴────────┐
- │                 │
- ▼                 ▼
-Dense          Lexical
-(Gemini        (FTS5
- Embed 2        BM25 over
- batched +      chunks.content
- cached)        in SQLite)
- │                 │
- └────────┬────────┘
+ ┌────────┬────────┬────────────┬────────┐
+ │        │        │            │        │
+ ▼        ▼        ▼            ▼        ▼
+Dense    FTS5     Claims       Entity   Wiki
+(Gemini  BM25     /facts       aliases  pages
+ 2)      chunks   search       + graph
+ │        │        │            │        │
+ └────────┴────────┴────────────┴────────┘
           │
           ▼
  Reciprocal Rank Fusion
  (k=60, deterministic tiebreak)
           │
           ▼
- Local reranker
- (jina-reranker-v3-mlx, 0.6B)
- or Cohere Rerank v3.5 (API)
+ Cohere Rerank v3.5
+ (or passthrough/offline)
           │
           ▼
  Memory layer budgeting
@@ -230,14 +355,14 @@ Cargo workspace layout:
 
 | Crate | Purpose |
 |---|---|
-| `engram-core` | Pure types, fusion (RRF), memory layers, temporal validity. Zero I/O. |
-| `engram-storage` | SQLite source of truth + FTS5 + chunk-embedding BLOBs. |
-| `engram-embed` | `Embedder` trait + Gemini Embed 2 (batch + single) + deterministic offline stub. |
-| `engram-rerank` | `Reranker` trait + jina-v3 MLX sidecar + Cohere Rerank v3.5 + passthrough. |
-| `engram-ingest` | Mining modes: papers (PDF + section-aware), conversations, repos, general, auto. |
-| `engram-graph` | Deterministic entity extraction + graph scaffolding. |
-| `engram-bench` | LongMemEval + LoCoMo-QA harness + strict LLM judge + gold evidence retrieval metrics. |
-| `engram-cli` | The single `engram` binary and the shared hybrid retrieval pipeline. |
+| `engram-core` (`paperfoot-engram-core` on crates.io) | Pure types, fusion (RRF), memory layers, temporal validity. Zero I/O. |
+| `engram-storage` (`paperfoot-engram-storage`) | SQLite source of truth + FTS5 + chunk-embedding BLOBs + KB/claim/entity/wiki tables. |
+| `engram-embed` (`paperfoot-engram-embed`) | `Embedder` trait + Gemini Embed 2 (batch + single) + deterministic offline stub. |
+| `engram-rerank` (`paperfoot-engram-rerank`) | `Reranker` trait + Cohere Rerank v3.5 + passthrough. |
+| `engram-ingest` (`paperfoot-engram-ingest`) | Mining modes: papers (PDF + section-aware), takeaways, conversations, repos, general, auto. |
+| `engram-graph` (`paperfoot-engram-graph`) | Deterministic entity extraction + SQLite graph expansion. |
+| `engram-bench` (`paperfoot-engram-bench`) | LongMemEval + LoCoMo-QA harness + strict LLM judge + gold evidence retrieval metrics. |
+| `engram-cli` (`paperfoot-engram`) | The single `engram` binary and the shared hybrid retrieval pipeline. |
 
 ## Framework compliance
 
@@ -248,31 +373,54 @@ engram follows the **[agent-cli-framework](https://github.com/paperfoot/agent-cl
 - Errors on stderr with `code`, `message`, `suggestion`, `exit_code`
 - Semantic exit codes: `0` success, `1` transient (retry), `2` config (fix setup), `3` bad input (fix args), `4` rate limited (back off)
 - No interactive prompts. Destructive ops like `forget` require `--confirm`
-- Skill file embedded in the binary as a compile-time constant and deployed via `engram skill install`
+- Skill folder embedded in the binary as compile-time assets and deployed via `engram skill install`; `engram skill package` creates the upload ZIP for Claude.ai / Claude desktop app
 - Secrets resolved in order: env var → config file → none. Always masked on display (`AIzaSy...DW58`)
 
 ## All the commands
 
 | | |
 |---|---|
-| `engram remember <content>` | Store a memory. Flags: `--importance 0-10`, `--tag` (repeatable), `--diary` |
-| `engram recall <query>` | Hybrid search. Flags: `--top-k`, `--layer identity\|critical\|topic\|deep`, `--diary`, `--since`, `--until` |
-| `engram ingest <path>` | Mine a file or directory. `--mode papers\|conversations\|repos\|general\|auto` |
+| `engram kb create/list/show/delete` | Manage domain knowledge bases |
+| `engram remember <content>` | Store a memory. Flags: `--importance 0-10`, `--tag` (repeatable), `--diary`, `--kb` |
+| `engram recall <query>` | Hybrid search. Flags: `--kb`, `--mode evidence\|raw\|wiki\|explore\|agent`, `--profile cloud_quality\|fast\|offline`, `--top-k`, `--allow-mixed-embeddings` |
+| `engram research <query>` | Evidence-first research retrieval. Returns query plan, evidence leads, answer context, and citation-readiness checks |
+| `engram ingest <path>` | Mine a file or directory. `--mode papers\|takeaways\|conversations\|repos\|general\|auto`, `--compile evidence` |
+| `engram documents list/show/delete` | Inspect or remove ingested source documents |
+| `engram compile --kb <name> --all` | Derive claims, source spans, entities, relations, takeaways, and wiki pages. Add `--llm` for Gemini 3.1 Flash-Lite extraction + Gemini 3.1 Pro synthesis via OpenRouter |
+| `engram jobs list/show` | Inspect compile job history |
+| `engram reindex --kb <name> \| --all` | Re-embed chunks with current embedding metadata |
+| `engram wiki --kb <name> [path]` | Browse generated wiki pages |
+| `engram graph neighbors <entity> --kb <name>` | Browse SQLite graph expansion. Supports `--hops 1|2` and `--min-weight` |
+| `engram doctor --json` | Verify keys, schema, embedding consistency, and daemon port |
+| `engram serve` / `engramd` | Start local HTTP API |
+| `engram usage [--kb <name>] [--since <rfc3339>]` | Summarize recorded Gemini/Cohere usage |
+| `engram budget show/set/clear` | Configure local daily/monthly API usage guardrails |
 | `engram edit <id>` | Update memory content or importance |
 | `engram forget <id> --confirm` | Soft-delete (destructive, requires `--confirm`) |
 | `engram entities list \| show <name>` | Browse extracted entities |
 | `engram export` / `engram import <file>` | JSON backup / restore |
-| `engram bench <suite>` | Run benchmarks. Suites: `mini`, `mini-fts`, `longmemeval`, `longmemeval-qa`, `locomo-qa`, `locomo-plus`, `mab` |
+| `engram bench <suite>` | Run benchmarks. Suites: `mini`, `mini-fts`, `scientific-mini`, `longmemeval`, `longmemeval-qa`, `locomo-qa`, `locomo-plus`, `mab` |
 | `engram config show \| set \| check` | Configuration |
-| `engram skill install \| uninstall` | Deploy agent skill signpost |
+| `engram skill install \| package \| uninstall` | Deploy/package the agent skill |
 | `engram agent-info` | Self-describing manifest (start here) |
+
+### Local daemon/API
+
+```bash
+engram serve --host 127.0.0.1 --port 8768
+```
+
+The daemon is local-only by default and uses the same SQLite store and retrieval/compiler code as the CLI. Supported endpoints:
+
+`GET /health`, `GET|POST /v1/kbs`, `GET /v1/documents`, `GET|DELETE /v1/documents/{id}`, `POST /v1/recall`, `POST /v1/research`, `POST /v1/ingest`, `POST /v1/compile`, `POST /v1/reindex`, `GET /v1/entities`, `GET /v1/entities/{id}`, `GET /v1/jobs`, `GET /v1/jobs/{id}`, `GET /v1/usage`, `GET|POST /v1/budget`.
 
 ## Development
 
 ```bash
 cargo build --release                         # build
-cargo test                                    # 27 unit + 18 integration tests
+cargo test                                    # 75 tests currently passing
 ./target/release/engram bench mini --json     # fast smoke bench (<1s)
+./target/release/engram bench scientific-mini --json
 ./target/release/engram bench longmemeval     # real benchmark (~5 min with Cohere)
 ```
 
@@ -280,33 +428,36 @@ Research direction for contributors: [`program.md`](program.md). Design rational
 
 ## Roadmap
 
-**Shipped (v0.1.0)**
-- Single-binary install, hybrid Gemini + FTS5 + RRF retrieval
-- Persistent SQLite store with chunk-embedding BLOBs
+**Shipped**
+- Single-binary install, hybrid Gemini Embedding 2 + FTS5 + RRF + Cohere retrieval
+- Persistent SQLite store with chunk-embedding BLOBs and KB/domain evidence tables
 - Full CRUD (`remember`, `recall`, `edit`, `forget`, `export`, `import`)
-- Mining modes for papers, conversations, repos, general
+- KB CRUD, reindex, doctor, generated wiki pages, and local daemon/API
+- Mining modes for papers, takeaways, conversations, repos, general
 - PDF ingestion with section-aware chunking
-- Local reranking via jina-reranker-v3-mlx (0.6B, Apple Silicon)
+- Evidence compiler for cited claims, source spans, entities, relations, and takeaways
 - Memory layers (L0–L3) with token budgeting
 - Diary namespaces for specialist agents
-- Entity extraction and browsing
+- Entity extraction, graph browsing, and graph expansion during recall
+- Document/job/budget UX plus local daemon endpoints for KBs, recall, research, compile, reindex, documents, entities, jobs, usage, and budgets
+- Optional LLM compiler pass: Gemini 3.1 Flash-Lite Preview extraction + Gemini 3.1 Pro Preview synthesis via OpenRouter
 - LongMemEval + LoCoMo-QA harness with strict evaluation
-- 45 unit + integration tests
+- `scientific-mini` evidence compiler benchmark
+- 75 unit + integration tests
 
 **Next up**
 - Strict benchmark suite: buried-needle, multi-hop, temporal reasoning, adversarial, and attribution tests
 - Contradiction detection and resolution (temporal validity windows + provenance)
 - GitHub Actions CI releasing prebuilt macOS + Linux binaries
-- `cargo install engram-cli` from crates.io
+- `cargo install paperfoot-engram` from crates.io
 - Local embedding fallback via `candle` + `bge-small-en-v1.5` (zero API, p95 < 10 ms)
-- Graph expansion on retrieval (deterministic edges already extracted)
 
 ## Credits
 
 - **[HippoRAG 2](https://github.com/OSU-NLP-Group/HippoRAG)** — "return verbatim passages, don't paraphrase"
 - **[LongMemEval](https://github.com/xiaowu0162/LongMemEval)** — the retrieval benchmark
 - **[LoCoMo](https://snap-research.github.io/locomo/)** — the conversational QA benchmark
-- **[jina-reranker-v3](https://huggingface.co/jinaai/jina-reranker-v3)** — local 0.6B listwise reranker
+- **[Cohere Rerank](https://docs.cohere.com/docs/reranking)** — cloud reranking for the default profile
 - **[agent-cli-framework](https://github.com/paperfoot/agent-cli-framework)** — the principles engram follows
 
 ## License

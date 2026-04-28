@@ -43,7 +43,6 @@ where
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocomoSample {
     #[serde(default)]
@@ -105,9 +104,7 @@ pub fn flatten_conversation(conv: &serde_json::Value) -> Vec<(String, String)> {
         let mut keys: Vec<&String> = obj
             .keys()
             .filter(|k| {
-                k.starts_with("session_")
-                    && !k.ends_with("_date_time")
-                    && !k.ends_with("_summary")
+                k.starts_with("session_") && !k.ends_with("_date_time") && !k.ends_with("_summary")
             })
             .collect();
         // Sort numerically so session_10 comes after session_2, not after session_1.
@@ -207,8 +204,11 @@ mod tests {
         .unwrap();
         let flat = flatten_conversation(&v);
         assert_eq!(flat.len(), 1);
-        assert!(flat[0].1.contains("1:56 pm on 8 May, 2023"),
-            "expected timestamp in flattened text, got: {}", flat[0].1);
+        assert!(
+            flat[0].1.contains("1:56 pm on 8 May, 2023"),
+            "expected timestamp in flattened text, got: {}",
+            flat[0].1
+        );
         assert!(flat[0].1.contains("[session_1 — 1:56 pm on 8 May, 2023]"));
     }
 

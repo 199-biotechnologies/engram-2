@@ -1,4 +1,3 @@
-
 //!
 //! L0 = identity (static)
 //! L1 = critical facts (compressed)

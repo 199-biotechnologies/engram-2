@@ -1,7 +1,6 @@
 //! Temporal validity windows — facts can be valid for a date range.
 //!
 
-
 use crate::types::Memory;
 use chrono::{DateTime, Utc};
 

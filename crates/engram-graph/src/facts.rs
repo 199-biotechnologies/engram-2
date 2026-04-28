@@ -115,7 +115,8 @@ mod tests {
 
     #[test]
     fn parse_bare_array() {
-        let raw = r#"[{"subject":"Alice","predicate":"works_at","object":"Acme","confidence":1.0}]"#;
+        let raw =
+            r#"[{"subject":"Alice","predicate":"works_at","object":"Acme","confidence":1.0}]"#;
         let f = parse_extraction_output(raw).unwrap();
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].subject, "Alice");
